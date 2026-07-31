@@ -148,10 +148,12 @@ model Payment {
  id String @id @default(auto()) @map("_id") @db.ObjectId
  orderId String @db.ObjectId
  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+ cashierId String? @db.ObjectId
  method PaymentMethod
  status PaymentStatus @default(PAID)
  amount Float
  reference String?
+ paidAt DateTime?
  createdAt DateTime @default(now())
 }
 model Inventory {
