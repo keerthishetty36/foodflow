@@ -1,0 +1,244 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "mongodb"
+  url = env("DATABASE_URL")
+}
+enum Role {
+ ADMIN
+ CASHIER
+}
+enum TableStatus {
+ AVAILABLE
+ OCCUPIED
+ RESERVED
+ CLEANING
+}
+enum OrderStatus {
+ PENDING
+ ACCEPTED
+ PREPARING
+ READY
+ SERVED
+ PAID
+ COMPLETED
+ CANCELLED
+}
+enum PaymentMethod {
+ CASH
+ UPI
+ CARD
+ WALLET
+ SPLIT
+}
+enum PaymentStatus {
+ PENDING
+ PAID
+ REFUNDED
+}
+enum VegType {
+ VEG
+ NON_VEG
+ EGG
+}
+model User {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ name String
+ email String @unique
+ passwordHash String
+ role Role @default(CASHIER)
+ active Boolean @default(true)
+ refreshToken String?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ orders Order[]
+ auditLogs AuditLog[]
+}
+model Category {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ name String @unique
+ description String?
+ image String?
+ active Boolean @default(true)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+}
+model MenuItem {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ name String
+ description String?
+ image String?
+ categoryId String
+ price Float
+ costPrice Float
+ tax Float @default(0)
+ discount Float @default(0)
+ preparationTime Int @default(10)
+ available Boolean @default(true)
+ vegType VegType @default(VEG)
+ barcode String? @unique
+ sku String? @unique
+ calories Int?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ orderItems OrderItem[]
+ recipes Recipe[]
+}
+model DiningTable {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ name String @unique
+ capacity Int
+ status TableStatus @default(AVAILABLE)
+ mergedWithIds String[] @db.ObjectId
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ orders Order[]
+}
+model Customer {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ name String
+ phone String @unique
+ email String?
+ address String?
+ birthday DateTime?
+ anniversary DateTime?
+ loyaltyPoints Int @default(0)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ orders Order[]
+}
+model Order {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ orderNumber String @unique
+ tableId String? @db.ObjectId
+ table DiningTable? @relation(fields:[tableId], references:[id])
+ customerId String? @db.ObjectId
+ customer Customer? @relation(fields:[customerId], references:[id])
+ cashierId String @db.ObjectId
+ cashier User @relation(fields:[cashierId], references:[id])
+ status OrderStatus @default(PENDING)
+ subtotal Float
+ discountTotal Float @default(0)
+ taxTotal Float @default(0)
+ grandTotal Float
+ notes String?
+ isHeld Boolean @default(false)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ items OrderItem[]
+ payments Payment[]
+}
+model OrderItem {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ orderId String @db.ObjectId
+ order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+ menuItemId String @db.ObjectId
+ menuItem MenuItem @relation(fields:[menuItemId], references:[id])
+ name String
+ quantity Int
+ unitPrice Float
+ costPrice Float
+ tax Float
+ discount Float
+ notes String?
+ createdAt DateTime @default(now())
+}
+model Payment {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ orderId String @db.ObjectId
+ order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+ method PaymentMethod
+ status PaymentStatus @default(PAID)
+ amount Float
+ reference String?
+ createdAt DateTime @default(now())
+}
+model Inventory {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ name String
+ sku String? @unique
+ unit String
+ quantity Float @default(0)
+ reorderLevel Float @default(0)
+ expiryDate DateTime?
+ ingredient Ingredient?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+}
+model Ingredient {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ inventoryId String @unique @db.ObjectId
+ inventory Inventory @relation(fields:[inventoryId], references:[id])
+ recipes Recipe[]
+}
+model Recipe {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ menuItemId String @db.ObjectId
+ menuItem MenuItem @relation(fields:[menuItemId], references:[id])
+ ingredientId String @db.ObjectId
+ ingredient Ingredient @relation(fields:[ingredientId], references:[id])
+ quantity Float
+}
+model Supplier {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ name String
+ phone String?
+ email String?
+ address String?
+ active Boolean @default(true)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ purchases Purchase[]
+}
+model Purchase {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ supplierId String @db.ObjectId
+ supplier Supplier @relation(fields:[supplierId], references:[id])
+ invoiceNumber String?
+ total Float
+ paidAmount Float @default(0)
+ items Json
+ createdAt DateTime @default(now())
+}
+model Expense {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ category String
+ amount Float
+ date DateTime @default(now())
+ notes String?
+ createdAt DateTime @default(now())
+}
+model Notification {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ type String
+ title String
+ message String
+ read Boolean @default(false)
+ userId String? @db.ObjectId
+ createdAt DateTime @default(now())
+}
+model AuditLog {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ userId String? @db.ObjectId
+ user User? @relation(fields:[userId], references:[id])
+ action String
+ entity String
+ entityId String?
+ metadata Json?
+ createdAt DateTime @default(now())
+}
+model Setting {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ restaurantName String
+ logo String?
+ gst String?
+ phone String?
+ email String?
+ address String?
+ timezone String @default("Asia/Kolkata")
+ currency String @default("INR")
+ receiptFooter String?
+ taxRate Float @default(0)
+ updatedAt DateTime @updatedAt
+}

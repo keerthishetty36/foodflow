@@ -1,0 +1,8 @@
+services:
+  foodflow:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file: ../server/.env
+    ports:
+      - "4000:4000"
