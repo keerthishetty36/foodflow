@@ -72,6 +72,33 @@ export async function ensureCashierUser(): Promise<void> {
   logger.info("Cashier account created", { email: "cashier@foodflow.local" });
 }
 
+export async function ensureSparseMenuItemUniqueIndexes(): Promise<void> {
+  const indexes = await prisma.$runCommandRaw({ listIndexes: "MenuItem" });
+  console.log(indexes);
+
+  const existingIndexes = (indexes as { cursor?: { firstBatch?: Array<{ name?: string; unique?: boolean; sparse?: boolean }> } }).cursor?.firstBatch ?? [];
+  const requiredIndexes = [
+    { field: "barcode", name: "MenuItem_barcode_key" },
+    { field: "sku", name: "MenuItem_sku_key" }
+  ];
+
+  for (const { field, name } of requiredIndexes) {
+    const existing = existingIndexes.find(index => index.name === name);
+    if (existing && (existing.unique !== true || existing.sparse !== true)) {
+      await prisma.$runCommandRaw({ dropIndexes: "MenuItem", index: name });
+    }
+
+    if (!existing || existing.unique !== true || existing.sparse !== true) {
+      await prisma.$runCommandRaw({
+        createIndexes: "MenuItem",
+        indexes: [{ key: { [field]: 1 }, unique: true, sparse: true, name }]
+      });
+    }
+  }
+
+  logger.info("Ensured MenuItem barcode and SKU indexes are unique sparse");
+}
+
 export async function ensureDefaultUsers(): Promise<void> {
   await ensureAdminUser();
   await ensureCashierUser();
