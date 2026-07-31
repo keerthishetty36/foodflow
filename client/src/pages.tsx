@@ -1,31 +1,950 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ChefHat, Minus, Plus, Printer, Trash2 } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { ChefHat, Minus, Plus, Printer, Trash2, Search, Edit2, X, Filter } from "lucide-react";
 import { io } from "socket.io-client";
 import { api, get } from "./api";
 import { EmptyState, Loading, money, QueryError } from "./components";
 import { useAuthStore, useCartStore } from "./store";
-const CASHIER_ROLE="CASHIER" as const;
+const CASHIER_ROLE = "CASHIER" as const;
 
-const errorMessage=(error:unknown)=>((error as {response?:{data?:{message?:string}}})?.response?.data?.message)||"Request failed. Please try again.";
+const errorMessage = (error: unknown) =>
+  (error as { response?: { data?: { message?: string } } })?.response?.data
+    ?.message || "Request failed. Please try again.";
+const defaultFoodImage = "/images/menu/default-food.jpg";
+const menuImage = (name: string) => {
+  const imageUrl = `/images/menu/${name.trim().toLowerCase().replace(/\s+/g, "-")}.jpg`;
+  console.log("Menu product:", { name });
+  console.log("Generated menu image URL:", imageUrl);
+  return imageUrl;
+};
 
-export function Login(){const [email,setEmail]=useState("admin@foodflow.local"),[password,setPassword]=useState("Admin@123"),[error,setError]=useState("");const set=useAuthStore(s=>s.setSession),nav=useNavigate();return <main className="grid min-h-screen place-items-center bg-orange-50 p-4"><form className="card w-full max-w-md" onSubmit={async e=>{e.preventDefault();setError("");try{const r=await api.post("/auth/login",{email,password}),session=r.data.data;set(session);nav(session.user.role===CASHIER_ROLE?"/pos":"/dashboard")}catch(reason){const response=(reason as {response?:{data?:{message?:string}|string};message?:string}).response?.data;setError(typeof response==="string"?response:response?.message||(reason as Error).message||"Login request failed.")}}}><ChefHat className="text-brand-600" size={40}/><h1 className="my-3 text-2xl font-bold">FoodFlow POS</h1>{error&&<p className="text-red-600">{error}</p>}<label className="label">Email</label><input className="field mb-3" value={email} onChange={e=>setEmail(e.target.value)}/><label className="label">Password</label><input className="field mb-4" type="password" value={password} onChange={e=>setPassword(e.target.value)}/><button className="btn-primary w-full">Sign in</button></form></main>}
+export function Login() {
+  const [email, setEmail] = useState("admin@foodflow.local"),
+    [password, setPassword] = useState("Admin@123"),
+    [error, setError] = useState("");
+  const set = useAuthStore((s) => s.setSession),
+    nav = useNavigate();
+  return (
+    <main className="grid min-h-screen place-items-center bg-orange-50 p-4">
+      <form
+        className="card w-full max-w-md"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setError("");
+          try {
+            const r = await api.post("/auth/login", { email, password }),
+              session = r.data.data;
+            set(session);
+            nav(session.user.role === CASHIER_ROLE ? "/pos" : "/dashboard");
+          } catch (reason) {
+            const response = (
+              reason as {
+                response?: { data?: { message?: string } | string };
+                message?: string;
+              }
+            ).response?.data;
+            setError(
+              typeof response === "string"
+                ? response
+                : response?.message ||
+                    (reason as Error).message ||
+                    "Login request failed.",
+            );
+          }
+        }}
+      >
+        <ChefHat className="text-brand-600" size={40} />
+        <h1 className="my-3 text-2xl font-bold">FoodFlow POS</h1>
+        {error && <p className="text-red-600">{error}</p>}
+        <label className="label">Email</label>
+        <input
+          className="field mb-3"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <label className="label">Password</label>
+        <input
+          className="field mb-4"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <button className="btn-primary w-full">Sign in</button>
+      </form>
+    </main>
+  );
+}
 
-export function Dashboard(){const q=useQuery({queryKey:["dashboard"],queryFn:()=>get<any>("/dashboard")});useEffect(()=>{const socket=io();socket.on("dashboard:updated",()=>q.refetch());return()=>{socket.close()}},[q.refetch]);if(q.isPending)return <Loading/>;if(q.isError)return <QueryError error={q.error}/>;const d=q.data??{},topSelling=Array.isArray(d.topSelling)?d.topSelling:[],recentPayments=Array.isArray(d.recentPayments)?d.recentPayments:[],stats=[["Today sales",money(d.todaySales)], ["Today profit",money(d.todayProfit)], ["Paid orders",d.totalPaidOrders??0], ["Running",d.runningOrders??0]];return <div className="space-y-6"><div className="grid gap-4 md:grid-cols-4">{stats.map(([key,value])=><div className="card" key={key}><p className="text-sm text-slate-500">{key}</p><b className="text-2xl">{value}</b></div>)}</div><div className="grid gap-5 lg:grid-cols-2"><section className="card"><h2 className="mb-3 font-bold">Top selling foods</h2><div className="h-60">{topSelling.length?<ResponsiveContainer><BarChart data={topSelling.map((x:any)=>({name:x.name,quantity:x._sum?.quantity??0}))}><XAxis dataKey="name"/><YAxis/><Tooltip/><Bar dataKey="quantity" fill="#f97316"/></BarChart></ResponsiveContainer>:<EmptyState message="No sales data available yet."/>}</div></section><section className="card"><h2 className="mb-3 font-bold">Recent payments</h2>{recentPayments.length?recentPayments.map((payment:any)=><p className="flex justify-between border-b py-2" key={payment.id}><span>{payment.order?.orderNumber||"-"} · {payment.order?.table?.name||"Takeaway"}</span><b>{money(payment.amount)}</b></p>):<EmptyState message="No payments yet."/>}</section></div></div>}
+export function Dashboard() {
+  const q = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: () => get<any>("/dashboard"),
+  });
+  useEffect(() => {
+    const socket = io();
+    socket.on("dashboard:updated", () => q.refetch());
+    return () => {
+      socket.close();
+    };
+  }, [q.refetch]);
+  if (q.isPending) return <Loading />;
+  if (q.isError) return <QueryError error={q.error} />;
+  const d = q.data ?? {},
+    topSelling = Array.isArray(d.topSelling) ? d.topSelling : [],
+    recentPayments = Array.isArray(d.recentPayments) ? d.recentPayments : [],
+    stats = [
+      ["Today sales", money(d.todaySales)],
+      ["Today profit", money(d.todayProfit)],
+      ["Paid orders", d.totalPaidOrders ?? 0],
+      ["Running", d.runningOrders ?? 0],
+    ];
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-4">
+        {stats.map(([key, value]) => (
+          <div className="card" key={key}>
+            <p className="text-sm text-slate-500">{key}</p>
+            <b className="text-2xl">{value}</b>
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="card">
+          <h2 className="mb-3 font-bold">Top selling foods</h2>
+          <div className="h-60">
+            {topSelling.length ? (
+              <ResponsiveContainer>
+                <BarChart
+                  data={topSelling.map((x: any) => ({
+                    name: x.name,
+                    quantity: x._sum?.quantity ?? 0,
+                  }))}
+                >
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="quantity" fill="#f97316" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <EmptyState message="No sales data available yet." />
+            )}
+          </div>
+        </section>
+        <section className="card">
+          <h2 className="mb-3 font-bold">Recent payments</h2>
+          {recentPayments.length ? (
+            recentPayments.map((payment: any) => (
+              <p
+                className="flex justify-between border-b py-2"
+                key={payment.id}
+              >
+                <span>
+                  {payment.order?.orderNumber || "-"} ·{" "}
+                  {payment.order?.table?.name || "Takeaway"}
+                </span>
+                <b>{money(payment.amount)}</b>
+              </p>
+            ))
+          ) : (
+            <EmptyState message="No payments yet." />
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
 
-export function Pos(){const cart=useCartStore(),[search,setSearch]=useState(""),[category,setCategory]=useState(""),[selectedId,setSelectedId]=useState(""),[method,setMethod]=useState("CASH"),[amount,setAmount]=useState("");const qc=useQueryClient();const menu=useQuery({queryKey:["menu",search,category],queryFn:()=>get<any[]>("/menu-items",{search,categoryId:category||undefined,available:true})});const cats=useQuery({queryKey:["categories"],queryFn:()=>get<any[]>("/categories")});const tables=useQuery({queryKey:["tables"],queryFn:()=>get<any[]>("/tables")});const customers=useQuery({queryKey:["customers"],queryFn:()=>get<any[]>("/customers")});const orders=useQuery({queryKey:["orders"],queryFn:()=>get<any[]>("/orders")});const create=useMutation({mutationFn:()=>api.post("/orders",{tableId:cart.tableId,customerId:cart.customerId||undefined,notes:cart.notes,items:cart.items.map(i=>({menuItemId:i.menuItemId,quantity:i.quantity,notes:i.notes}))}),onSuccess:()=>{cart.clear();qc.invalidateQueries({queryKey:["dashboard"]});qc.invalidateQueries({queryKey:["orders"]});qc.invalidateQueries({queryKey:["tables"]})}});const selected=(orders.data??[]).find((o:any)=>o.id===selectedId);const pay=useMutation({mutationFn:()=>api.post(`/orders/${selectedId}/payments`,{method,amount:Number(amount)}),onSuccess:()=>{qc.invalidateQueries({queryKey:["orders"]});qc.invalidateQueries({queryKey:["dashboard"]});qc.invalidateQueries({queryKey:["tables"]})}});const total=cart.items.reduce((sum,item)=>sum+item.price*item.quantity*(1+item.tax/100)*(1-item.discount/100),0);const isPaid=selected?.payments?.some((p:any)=>p.status==="PAID")&&selected.status==="COMPLETED";return <><div className="grid gap-5 xl:grid-cols-[1fr_380px]"><section><div className="mb-4 flex gap-2"><input className="field" placeholder="Search food / barcode" value={search} onChange={e=>setSearch(e.target.value)}/><select className="field w-48" value={category} onChange={e=>setCategory(e.target.value)}><option value="">All categories</option>{(cats.data??[]).map((x:any)=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div>{menu.isError?<QueryError error={menu.error}/>:menu.isPending?<Loading/>:<div className="grid gap-3 md:grid-cols-3">{menu.data?.length?menu.data.map((m:any)=><button className="card text-left hover:border-brand-500" key={m.id} onClick={()=>cart.add({menuItemId:m.id,name:m.name,price:m.price,tax:m.tax,discount:m.discount})}><b>{m.name}</b><p className="text-xs text-slate-500">{m.category?.name||"Uncategorized"}</p><strong className="text-brand-600">{money(m.price)}</strong></button>):<EmptyState message="No available menu items."/>}</div>}</section><aside className="card h-fit"><h2 className="mb-3 text-lg font-bold">Current bill</h2><select className="field mb-3" value={cart.tableId||""} onChange={e=>cart.setMeta({tableId:e.target.value||null})}><option value="">Select available table</option>{(tables.data??[]).filter((t:any)=>t.status==="AVAILABLE").map((t:any)=><option key={t.id} value={t.id}>{t.name}</option>)}</select><select className="field mb-3" value={cart.customerId||""} onChange={e=>cart.setMeta({customerId:e.target.value||null})}><option value="">Walk-in customer</option>{(customers.data??[]).map((c:any)=><option key={c.id} value={c.id}>{c.name} · {c.phone}</option>)}</select>{cart.items.map(item=><div className="mb-3 flex items-center gap-2" key={item.menuItemId}><span className="flex-1">{item.name}</span><button onClick={()=>cart.change(item.menuItemId,-1)}><Minus size={16}/></button><span>{item.quantity}</span><button onClick={()=>cart.change(item.menuItemId,1)}><Plus size={16}/></button><button onClick={()=>cart.remove(item.menuItemId)}><Trash2 className="text-red-500" size={16}/></button></div>)}<textarea className="field" placeholder="Special instructions" value={cart.notes} onChange={e=>cart.setMeta({notes:e.target.value})}/><p className="my-4 text-right text-xl font-bold">{money(total)}</p>{create.isError&&<p className="mb-2 text-sm text-red-600">{errorMessage(create.error)}</p>}<button className="btn-primary w-full" disabled={!cart.tableId||!cart.items.length||create.isPending} onClick={()=>create.mutate()}>Send to kitchen</button></aside></div><section className="card mt-5"><h2 className="mb-3 text-lg font-bold">Payment processing</h2><select className="field mb-3" value={selectedId} onChange={e=>{const order=(orders.data??[]).find((o:any)=>o.id===e.target.value);setSelectedId(e.target.value);setAmount(order?String(order.grandTotal):"")}}><option value="">Select existing order</option>{(orders.data??[]).map((o:any)=><option key={o.id} value={o.id}>{o.orderNumber} · {o.table?.name||"Takeaway"} · {money(o.grandTotal)}</option>)}</select>{selected&&<div><p>Table: {selected.table?.name||"-"} · Customer: {selected.customer?.name||"Walk-in"}</p>{(selected.items??[]).map((item:any)=><p className="flex justify-between py-1" key={item.id}><span>{item.quantity} x {item.name}</span><span>{money(item.unitPrice*item.quantity)}</span></p>)}<p className="my-2 text-right text-xl font-bold">Total: {money(selected.grandTotal)}</p><p className="mb-3">Payment status: {isPaid?"Paid":"Unpaid"}</p>{isPaid?<a className="btn-secondary" href={`${api.defaults.baseURL}/orders/${selected.id}/receipt`}><Printer size={16}/> Receipt</a>:<div className="grid gap-2 md:grid-cols-3"><select className="field" value={method} onChange={e=>setMethod(e.target.value)}><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><input className="field" type="number" min="0.01" step="0.01" placeholder="Amount received" value={amount} onChange={e=>setAmount(e.target.value)}/><button className="btn-primary" disabled={pay.isPending||Number(amount)!==selected.grandTotal} onClick={()=>pay.mutate()}>Confirm payment</button></div>}{pay.isError&&<p className="mt-2 text-sm text-red-600">{errorMessage(pay.error)}</p>}</div>}</section></>}
+export function Pos() {
+  const cart = useCartStore(),
+    [search, setSearch] = useState(""),
+    [category, setCategory] = useState(""),
+    [selectedId, setSelectedId] = useState(""),
+    [method, setMethod] = useState("CASH"),
+    [amount, setAmount] = useState("");
+  const qc = useQueryClient();
+  const menu = useQuery({
+    queryKey: ["menu", search, category],
+    queryFn: () =>
+      get<any[]>("/menu-items", {
+        search,
+        categoryId: category || undefined,
+        available: true,
+      }),
+  });
+  const cats = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => get<any[]>("/categories"),
+  });
+  const tables = useQuery({
+    queryKey: ["tables"],
+    queryFn: () => get<any[]>("/tables"),
+  });
+  const customers = useQuery({
+    queryKey: ["customers"],
+    queryFn: () => get<any[]>("/customers"),
+  });
+  const orders = useQuery({
+    queryKey: ["orders"],
+    queryFn: () => get<any[]>("/orders"),
+  });
+  const create = useMutation({
+    mutationFn: () =>
+      api.post("/orders", {
+        tableId: cart.tableId,
+        customerId: cart.customerId || undefined,
+        notes: cart.notes,
+        items: cart.items.map((i) => ({
+          menuItemId: i.menuItemId,
+          quantity: i.quantity,
+          notes: i.notes,
+        })),
+      }),
+    onSuccess: () => {
+      cart.clear();
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["tables"] });
+    },
+  });
+  const selected = (orders.data ?? []).find((o: any) => o.id === selectedId);
+  const pay = useMutation({
+    mutationFn: () =>
+      api.post(`/orders/${selectedId}/payments`, {
+        method,
+        amount: Number(amount),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["tables"] });
+    },
+  });
+  const total = cart.items.reduce(
+    (sum, item) =>
+      sum +
+      item.price *
+        item.quantity *
+        (1 + item.tax / 100) *
+        (1 - item.discount / 100),
+    0,
+  );
+  const isPaid =
+    selected?.payments?.some((p: any) => p.status === "PAID") &&
+    selected.status === "COMPLETED";
+  return (
+    <>
+      <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
+        <section>
+          <div className="mb-4 flex gap-2">
+            <input
+              className="field"
+              placeholder="Search food / barcode"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <select
+              className="field w-48"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              <option value="">All categories</option>
+              {(cats.data ?? []).map((x: any) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {menu.isError ? (
+            <QueryError error={menu.error} />
+          ) : menu.isPending ? (
+            <Loading />
+          ) : (
+            <div className="grid gap-3 md:grid-cols-3">
+              {menu.data?.length ? (
+                menu.data.map((m: any) => (
+                  <button
+                    className="card overflow-hidden p-0 text-left hover:border-brand-500"
+                    key={m.id}
+                    onClick={() =>
+                      cart.add({
+                        menuItemId: m.id,
+                        name: m.name,
+                        price: m.price,
+                        tax: m.tax,
+                        discount: m.discount,
+                      })
+                    }
+                  >
+                    <img
+                      className="h-[100px] w-full rounded-t-[12px] object-cover shadow-sm"
+                      src={menuImage(m.name)}
+                      alt={m.name}
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.src = defaultFoodImage;
+                      }}
+                    />
+                    <div className="p-4">
+                      <b>{m.name}</b>
+                      <p className="text-xs text-slate-500">
+                        {m.category?.name || "Uncategorized"}
+                      </p>
+                      <strong className="text-brand-600">
+                        {money(m.price)}
+                      </strong>
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <EmptyState message="No available menu items." />
+              )}
+            </div>
+          )}
+        </section>
+        <aside className="card h-fit">
+          <h2 className="mb-3 text-lg font-bold">Current bill</h2>
+          <select
+            className="field mb-3"
+            value={cart.tableId || ""}
+            onChange={(e) => cart.setMeta({ tableId: e.target.value || null })}
+          >
+            <option value="">Select available table</option>
+            {(tables.data ?? [])
+              .filter((t: any) => t.status === "AVAILABLE")
+              .map((t: any) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+          </select>
+          <select
+            className="field mb-3"
+            value={cart.customerId || ""}
+            onChange={(e) =>
+              cart.setMeta({ customerId: e.target.value || null })
+            }
+          >
+            <option value="">Walk-in customer</option>
+            {(customers.data ?? []).map((c: any) => (
+              <option key={c.id} value={c.id}>
+                {c.name} · {c.phone}
+              </option>
+            ))}
+          </select>
+          {cart.items.map((item) => (
+            <div className="mb-3 flex items-center gap-2" key={item.menuItemId}>
+              <img
+                className="h-[40px] w-[40px] rounded-[12px] object-cover shadow-sm mr-2"
+                src={menuImage(item.name)}
+                alt=""
+                loading="lazy"
+                onError={(e) => {
+                  e.currentTarget.src = defaultFoodImage;
+                }}
+              />
+              <span className="flex-1">{item.name}</span>
+              <button onClick={() => cart.change(item.menuItemId, -1)}>
+                <Minus size={16} />
+              </button>
+              <span>{item.quantity}</span>
+              <button onClick={() => cart.change(item.menuItemId, 1)}>
+                <Plus size={16} />
+              </button>
+              <button onClick={() => cart.remove(item.menuItemId)}>
+                <Trash2 className="text-red-500" size={16} />
+              </button>
+            </div>
+          ))}
+          <textarea
+            className="field"
+            placeholder="Special instructions"
+            value={cart.notes}
+            onChange={(e) => cart.setMeta({ notes: e.target.value })}
+          />
+          <p className="my-4 text-right text-xl font-bold">{money(total)}</p>
+          {create.isError && (
+            <p className="mb-2 text-sm text-red-600">
+              {errorMessage(create.error)}
+            </p>
+          )}
+          <button
+            className="btn-primary w-full"
+            disabled={!cart.tableId || !cart.items.length || create.isPending}
+            onClick={() => create.mutate()}
+          >
+            Send to kitchen
+          </button>
+        </aside>
+      </div>
+      <section className="card mt-5">
+        <h2 className="mb-3 text-lg font-bold">Payment processing</h2>
+        <select
+          className="field mb-3"
+          value={selectedId}
+          onChange={(e) => {
+            const order = (orders.data ?? []).find(
+              (o: any) => o.id === e.target.value,
+            );
+            setSelectedId(e.target.value);
+            setAmount(order ? String(order.grandTotal) : "");
+          }}
+        >
+          <option value="">Select existing order</option>
+          {(orders.data ?? []).map((o: any) => (
+            <option key={o.id} value={o.id}>
+              {o.orderNumber} · {o.table?.name || "Takeaway"} ·{" "}
+              {money(o.grandTotal)}
+            </option>
+          ))}
+        </select>
+        {selected && (
+          <div>
+            <p>
+              Table: {selected.table?.name || "-"} · Customer:{" "}
+              {selected.customer?.name || "Walk-in"}
+            </p>
+            {(selected.items ?? []).map((item: any) => (
+              <p className="flex justify-between py-1" key={item.id}>
+                <span>
+                  {item.quantity} x {item.name}
+                </span>
+                <span>{money(item.unitPrice * item.quantity)}</span>
+              </p>
+            ))}
+            <p className="my-2 text-right text-xl font-bold">
+              Total: {money(selected.grandTotal)}
+            </p>
+            <p className="mb-3">Payment status: {isPaid ? "Paid" : "Unpaid"}</p>
+            {isPaid ? (
+              <a
+                className="btn-secondary"
+                href={`${api.defaults.baseURL}/orders/${selected.id}/receipt`}
+              >
+                <Printer size={16} /> Receipt
+              </a>
+            ) : (
+              <div className="grid gap-2 md:grid-cols-3">
+                <select
+                  className="field"
+                  value={method}
+                  onChange={(e) => setMethod(e.target.value)}
+                >
+                  <option value="CASH">Cash</option>
+                  <option value="CARD">Card</option>
+                  <option value="UPI">UPI</option>
+                </select>
+                <input
+                  className="field"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder="Amount received"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+                <button
+                  className="btn-primary"
+                  disabled={
+                    pay.isPending || Number(amount) !== selected.grandTotal
+                  }
+                  onClick={() => pay.mutate()}
+                >
+                  Confirm payment
+                </button>
+              </div>
+            )}
+            {pay.isError && (
+              <p className="mt-2 text-sm text-red-600">
+                {errorMessage(pay.error)}
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
 
-export function Kitchen(){const q=useQuery({queryKey:["orders","kitchen"],queryFn:()=>get<any[]>("/orders")}),qc=useQueryClient();useEffect(()=>{const socket=io(),refresh=()=>q.refetch();socket.on("order:created",refresh);socket.on("order:updated",refresh);return()=>{socket.close()}},[q.refetch]);const update=useMutation({mutationFn:({id,status}:{id:string;status:string})=>api.patch(`/orders/${id}/status`,{status}),onSuccess:()=>qc.invalidateQueries({queryKey:["orders"]})});const cols=[["PENDING","Pending","PREPARING"],["PREPARING","Preparing","READY"],["READY","Ready","SERVED"],["SERVED","Served",""]];if(q.isPending)return <Loading/>;if(q.isError)return <QueryError error={q.error}/>;return <div className="grid gap-4 lg:grid-cols-4">{cols.map(([status,title,next])=><section className="rounded-xl bg-slate-200 p-3" key={status}><h2 className="mb-3 font-bold">{title}</h2>{q.data?.filter((o:any)=>o.status===status).map((o:any)=><div className="mb-3 rounded bg-white p-3" key={o.id}><b>{o.orderNumber}</b>{(o.items??[]).map((i:any)=><p key={i.id}>{i.quantity} × {i.name}</p>)}{next&&<button className="btn-primary mt-2 w-full" disabled={update.isPending} onClick={()=>update.mutate({id:o.id,status:next})}>Mark {next}</button>}</div>)}</section>)}</div>}
+export function Kitchen() {
+  const q = useQuery({
+      queryKey: ["orders", "kitchen"],
+      queryFn: () => get<any[]>("/orders"),
+    }),
+    qc = useQueryClient();
+  useEffect(() => {
+    const socket = io(),
+      refresh = () => q.refetch();
+    socket.on("order:created", refresh);
+    socket.on("order:updated", refresh);
+    return () => {
+      socket.close();
+    };
+  }, [q.refetch]);
+  const update = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      api.patch(`/orders/${id}/status`, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["orders"] }),
+  });
+  const cols = [
+    ["PENDING", "Pending", "PREPARING"],
+    ["PREPARING", "Preparing", "READY"],
+    ["READY", "Ready", "SERVED"],
+    ["SERVED", "Served", ""],
+  ];
+  if (q.isPending) return <Loading />;
+  if (q.isError) return <QueryError error={q.error} />;
+  return (
+    <div className="grid gap-4 lg:grid-cols-4">
+      {cols.map(([status, title, next]) => (
+        <section className="rounded-xl bg-slate-800 p-3" key={status}>
+          <h2 className="mb-3 font-bold text-white">{title}</h2>
+          {q.data
+            ?.filter((o: any) => o.status === status)
+            .map((o: any) => (
+              <div
+                className="mb-3 rounded bg-white p-3 text-slate-900"
+                key={o.id}
+              >
+                <b className="text-slate-900">{o.orderNumber}</b>
+                <p className="text-sm font-medium text-slate-700">
+                  Table: {o.table?.name || "Takeaway"}
+                </p>
+                <p className="mb-2 text-xs font-bold uppercase text-slate-600">
+                  Status: {title}
+                </p>
+                {(o.items ?? []).map((i: any) => (
+                  <div className="flex items-center gap-2 py-1" key={i.id}>
+                    <img
+                      className="h-[40px] w-[40px] rounded-[12px] object-cover shadow-sm mr-2"
+                      src={menuImage(i.name)}
+                      alt=""
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.src = defaultFoodImage;
+                      }}
+                    />
+                    <p className="text-slate-900">
+                      {i.quantity} × {i.name}
+                    </p>
+                  </div>
+                ))}
+                {next && (
+                  <button
+                    className="btn-primary mt-2 w-full"
+                    disabled={update.isPending}
+                    onClick={() => update.mutate({ id: o.id, status: next })}
+                  >
+                    Mark {next}
+                  </button>
+                )}
+              </div>
+            ))}
+        </section>
+      ))}
+    </div>
+  );
+}
 
-export function Orders(){const q=useQuery({queryKey:["orders"],queryFn:()=>get<any[]>("/orders")}),qc=useQueryClient(),nav=useNavigate();const [selectedId,setSelectedId]=useState(""),[method,setMethod]=useState("CASH");const selected=(q.data??[]).find((o:any)=>o.id===selectedId);const pay=useMutation({mutationFn:(o:any)=>api.post(`/orders/${o.id}/payments`,{method,amount:o.grandTotal}),onSuccess:()=>{qc.invalidateQueries({queryKey:["orders"]});qc.invalidateQueries({queryKey:["dashboard"]});qc.invalidateQueries({queryKey:["tables"]});setSelectedId("")}});const paymentStatus=(o:any)=>o.payments?.some((p:any)=>p.status==="PAID")?["COMPLETED","PAID"].includes(o.status)?"Paid":"Partially paid":"Unpaid";if(q.isPending)return <Loading/>;if(q.isError)return <QueryError error={q.error}/>;return <div className="card overflow-auto"><div className="mb-4 flex justify-between"><h2 className="text-xl font-bold">Orders & bills</h2><button className="btn-primary" onClick={()=>nav("/pos")}>Create Order</button></div>{pay.isError&&<p className="mb-2 text-sm text-red-600">{errorMessage(pay.error)}</p>}{selected&&<section className="mb-4 border-b pb-4"><div className="mb-3 flex items-center justify-between"><h3 className="font-bold">Bill {selected.orderNumber}</h3><button className="btn-secondary" onClick={()=>setSelectedId("")}>Close</button></div><p>Table: {selected.table?.name||"-"} · Customer: {selected.customer?.name||"Walk-in"}</p>{(selected.items??[]).map((item:any)=><p className="flex justify-between py-1" key={item.id}><span>{item.quantity} × {item.name}</span><span>{money(item.unitPrice*item.quantity)}</span></p>)}<p>Subtotal: {money(selected.subtotal)}</p><p>Tax: {money(selected.taxTotal)}</p><p>Discount: {money(selected.discountTotal)}</p><p className="my-2 text-right text-xl font-bold">Grand Total: {money(selected.grandTotal)}</p>{!["COMPLETED","CANCELLED"].includes(selected.status)&&<div className="flex gap-2"><select className="field" value={method} onChange={e=>setMethod(e.target.value)}><option value="CASH">Cash</option><option value="CARD">Card</option><option value="UPI">UPI</option></select><button className="btn-primary" disabled={pay.isPending} onClick={()=>pay.mutate(selected)}>Receive payment</button></div>}</section>}{q.data?.length?<div><div className="grid min-w-[700px] grid-cols-6 gap-3 border-b p-3 text-sm font-bold"><span>Order Number</span><span>Table</span><span>Customer</span><span>Total</span><span>Order Status</span><span>Payment Status</span></div>{q.data.map((o:any)=><button className="grid min-w-[700px] grid-cols-6 gap-3 border-b p-3 text-left hover:bg-slate-50" key={o.id} onClick={()=>setSelectedId(o.id)}><span>{o.orderNumber}</span><span>{o.table?.name||"-"}</span><span>{o.customer?.name||"Walk-in"}</span><span>{money(o.grandTotal)}</span><span>{o.status==="COMPLETED"?"Closed":o.status}</span><span>{paymentStatus(o)}</span></button>)}</div>:<EmptyState message="No orders found."/>}</div>}
+export function Orders() {
+  const q = useQuery({
+      queryKey: ["orders"],
+      queryFn: () => get<any[]>("/orders"),
+    }),
+    qc = useQueryClient(),
+    nav = useNavigate();
+  const [selectedId, setSelectedId] = useState(""),
+    [method, setMethod] = useState("CASH");
+  const selected = (q.data ?? []).find((o: any) => o.id === selectedId);
+  const pay = useMutation({
+    mutationFn: (o: any) =>
+      api.post(`/orders/${o.id}/payments`, { method, amount: o.grandTotal }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["tables"] });
+      setSelectedId("");
+    },
+  });
+  const paymentStatus = (o: any) =>
+    o.payments?.some((p: any) => p.status === "PAID")
+      ? ["COMPLETED", "PAID"].includes(o.status)
+        ? "Paid"
+        : "Partially paid"
+      : "Unpaid";
+  if (q.isPending) return <Loading />;
+  if (q.isError) return <QueryError error={q.error} />;
+  return (
+    <div className="card overflow-auto">
+      <div className="mb-4 flex justify-between">
+        <h2 className="text-xl font-bold">Orders & bills</h2>
+        <button className="btn-primary" onClick={() => nav("/pos")}>
+          Create Order
+        </button>
+      </div>
+      {pay.isError && (
+        <p className="mb-2 text-sm text-red-600">{errorMessage(pay.error)}</p>
+      )}
+      {selected && (
+        <section className="mb-4 border-b pb-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-bold">Bill {selected.orderNumber}</h3>
+            <button className="btn-secondary" onClick={() => setSelectedId("")}>
+              Close
+            </button>
+          </div>
+          <p>
+            Table: {selected.table?.name || "-"} · Customer:{" "}
+            {selected.customer?.name || "Walk-in"}
+          </p>
+          {(selected.items ?? []).map((item: any) => (
+            <p className="flex justify-between py-1" key={item.id}>
+              <span>
+                {item.quantity} × {item.name}
+              </span>
+              <span>{money(item.unitPrice * item.quantity)}</span>
+            </p>
+          ))}
+          <p>Subtotal: {money(selected.subtotal)}</p>
+          <p>Tax: {money(selected.taxTotal)}</p>
+          <p>Discount: {money(selected.discountTotal)}</p>
+          <p className="my-2 text-right text-xl font-bold">
+            Grand Total: {money(selected.grandTotal)}
+          </p>
+          {!["COMPLETED", "CANCELLED"].includes(selected.status) && (
+            <div className="flex gap-2">
+              <select
+                className="field"
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
+              >
+                <option value="CASH">Cash</option>
+                <option value="CARD">Card</option>
+                <option value="UPI">UPI</option>
+              </select>
+              <button
+                className="btn-primary"
+                disabled={pay.isPending}
+                onClick={() => pay.mutate(selected)}
+              >
+                Receive payment
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+      {q.data?.length ? (
+        <div>
+          <div className="grid min-w-[700px] grid-cols-6 gap-3 border-b p-3 text-sm font-bold">
+            <span>Order Number</span>
+            <span>Table</span>
+            <span>Customer</span>
+            <span>Total</span>
+            <span>Order Status</span>
+            <span>Payment Status</span>
+          </div>
+          {q.data.map((o: any) => (
+            <button
+              className="grid min-w-[700px] grid-cols-6 gap-3 border-b p-3 text-left hover:bg-slate-50"
+              key={o.id}
+              onClick={() => setSelectedId(o.id)}
+            >
+              <span>{o.orderNumber}</span>
+              <span>{o.table?.name || "-"}</span>
+              <span>{o.customer?.name || "Walk-in"}</span>
+              <span>{money(o.grandTotal)}</span>
+              <span>{o.status === "COMPLETED" ? "Closed" : o.status}</span>
+              <span>{paymentStatus(o)}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <EmptyState message="No orders found." />
+      )}
+    </div>
+  );
+}
 
-const configs:Record<string,string[]>={customers:["name","phone","email","address"],tables:["name","capacity","status"],inventory:["name","sku","unit","quantity","reorderLevel"],suppliers:["name","phone","email","address"],"menu-items":["name","price","costPrice","categoryId","vegType"]};
-export function Resource({type}:{type:string}){const fields=configs[type]??[],q=useQuery({queryKey:[type],queryFn:()=>get<any[]>(`/${type}`)}),qc=useQueryClient(),[form,setForm]=useState<Record<string,string>>({}),[show,setShow]=useState(false);const save=useMutation({mutationFn:async()=>{const nums=["price","costPrice","capacity","quantity","reorderLevel"],data=Object.fromEntries(Object.entries(form).filter(([_,v])=>v!=="").map(([key,value])=>[key,nums.includes(key)?Number(value):key==="status"?String(value).toUpperCase():value]));try{return await api.post(`/${type}`,data)}catch(error){if(type==="menu-items")console.error("Menu item create failed",(error as {response?:{data?:unknown}}).response?.data);throw error}},onSuccess:()=>{setShow(false);setForm({});qc.invalidateQueries({queryKey:[type]})}});if(q.isPending)return <Loading/>;if(q.isError)return <QueryError error={q.error}/>;return <div className="card"><div className="mb-4 flex justify-between"><h2 className="text-xl font-bold">{type}</h2><button className="btn-primary" onClick={()=>setShow(!show)}>Add</button></div>{show&&<form className="mb-4 grid gap-2 md:grid-cols-3" onSubmit={e=>{e.preventDefault();save.mutate()}}>{fields.map(field=><input className="field" placeholder={field} key={field} value={form[field]||""} onChange={e=>setForm({...form,[field]:e.target.value})}/>) }<button className="btn-primary" disabled={save.isPending}>Save</button>{save.isError&&<p className="text-sm text-red-600">{errorMessage(save.error)}</p>}</form>}{q.data?.length?q.data.map((x:any)=><div className="border-b p-2" key={x.id}>{fields.map(field=><span className="mr-5" key={field}><b>{field}:</b> {String(x[field]??"-")}</span>)}</div>):<EmptyState/>}</div>}
+const configs: Record<string, string[]> = {
+  customers: ["name", "phone", "email", "address"],
+  tables: ["name", "capacity", "status"],
+  inventory: ["name", "sku", "unit", "quantity", "reorderLevel"],
+  suppliers: ["name", "phone", "email", "address"],
+  "menu-items": ["name", "price", "costPrice", "categoryId", "vegType"],
+};
+export function Resource({ type }: { type: string }) {
+  const fields = configs[type] ?? [],
+    isMenu = type === "menu-items",
+    q = useQuery({ queryKey: [type], queryFn: () => get<any[]>(`/${type}`) }),
+    qc = useQueryClient(),
+    [form, setForm] = useState<Record<string, string>>({}),
+    [show, setShow] = useState(false),
+    [editingId, setEditingId] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: async () => {
+      const nums = [
+          "price",
+          "costPrice",
+          "capacity",
+          "quantity",
+          "reorderLevel",
+        ],
+        data = Object.fromEntries(
+          Object.entries(form)
+            .filter(([_, v]) => v !== "")
+            .map(([key, value]) => [
+              key,
+              nums.includes(key)
+                ? Number(value)
+                : key === "status"
+                  ? String(value).toUpperCase()
+                  : value,
+            ]),
+        );
+      try {
+        return editingId
+          ? await api.patch(`/${type}/${editingId}`, data)
+          : await api.post(`/${type}`, data);
+      } catch (error) {
+        if (isMenu)
+          console.error(
+            "Menu item save failed",
+            (error as { response?: { data?: unknown } }).response?.data,
+          );
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      setShow(false);
+      setEditingId(null);
+      setForm({});
+      qc.invalidateQueries({ queryKey: [type] });
+    },
+  });
+  if (q.isPending) return <Loading />;
+  if (q.isError) return <QueryError error={q.error} />;
+  return (
+    <div className="card">
+      <div className="mb-4 flex justify-between">
+        <h2 className="text-xl font-bold">{type}</h2>
+        <button
+          className="btn-primary"
+          onClick={() => {
+            setShow(!show);
+            setEditingId(null);
+            setForm({});
+          }}
+        >
+          Add
+        </button>
+      </div>
+      {show && (
+        <form
+          className="mb-4 grid gap-2 md:grid-cols-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            save.mutate();
+          }}
+        >
+          {fields.map((field) => (
+            <input
+              className="field"
+              placeholder={field}
+              key={field}
+              value={form[field] || ""}
+              onChange={(e) => setForm({ ...form, [field]: e.target.value })}
+            />
+          ))}
+          <button
+            className="btn-primary"
+            disabled={save.isPending}
+          >
+            {editingId ? "Update" : "Save"}
+          </button>
+          {save.isError && (
+            <p className="text-sm text-red-600">{errorMessage(save.error)}</p>
+          )}
+        </form>
+      )}
+      {q.data?.length ? (
+        isMenu ? (
+          q.data.map((x: any) => {
+            const imageUrl = menuImage(x.name);
+            console.log(x);
+            console.log(imageUrl);
+            return <div className="flex items-center gap-3 border-b p-2" key={x.id}>
+              <img
+                className="h-16 w-16 rounded-[12px] object-cover shadow-sm"
+                src={imageUrl}
+                alt={x.name}
+                loading="lazy"
+                onError={(e) => {
+                  e.currentTarget.src = defaultFoodImage;
+                }}
+              />
+              <div className="flex-1">
+                {fields.map((field) => (
+                  <span className="mr-5" key={field}>
+                    <b>{field}:</b> {String(x[field] ?? "-")}
+                  </span>
+                ))}
+              </div>
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  setEditingId(x.id);
+                  setForm(
+                    Object.fromEntries(
+                      fields.map((field) => [field, x[field] ?? ""]),
+                    ),
+                  );
+                  setShow(true);
+                }}
+              >
+                Edit
+              </button>
+            </div>
+          })
+        ) : (
+          q.data.map((x: any) => (
+            <div className="border-b p-2" key={x.id}>
+              {fields.map((field) => (
+                <span className="mr-5" key={field}>
+                  <b>{field}:</b> {String(x[field] ?? "-")}
+                </span>
+              ))}
+            </div>
+          ))
+        )
+      ) : (
+        <EmptyState />
+      )}
+    </div>
+  );
+}
 
-export function Reports(){const q=useQuery({queryKey:["report"],queryFn:()=>get<any>("/reports/sales")});if(q.isPending)return <Loading/>;if(q.isError)return <QueryError error={q.error}/>;return <div className="grid gap-4 md:grid-cols-4">{Object.entries(q.data??{}).filter(([key])=>key!=="rows").map(([key,value])=><div className="card" key={key}><p>{key}</p><b className="text-xl">{key==="orders"?String(value):money(Number(value)||0)}</b></div>)}</div>}
+export function Reports() {
+  const q = useQuery({
+    queryKey: ["report"],
+    queryFn: () => get<any>("/reports/sales"),
+  });
+  if (q.isPending) return <Loading />;
+  if (q.isError) return <QueryError error={q.error} />;
+  return (
+    <div className="grid gap-4 md:grid-cols-4">
+      {Object.entries(q.data ?? {})
+        .filter(([key]) => key !== "rows")
+        .map(([key, value]) => (
+          <div className="card" key={key}>
+            <p>{key}</p>
+            <b className="text-xl">
+              {key === "orders" ? String(value) : money(Number(value) || 0)}
+            </b>
+          </div>
+        ))}
+    </div>
+  );
+}
 
-export function Notifications(){const q=useQuery({queryKey:["notifications"],queryFn:()=>get<any[]>("/notifications")}),qc=useQueryClient();const markRead=useMutation({mutationFn:(id:string)=>api.patch(`/notifications/${id}/read`),onSuccess:()=>qc.invalidateQueries({queryKey:["notifications"]})});if(q.isPending)return <Loading/>;if(q.isError)return <QueryError error={q.error}/>;return <div className="card"><h2 className="mb-4 text-xl font-bold">Notifications</h2>{q.data?.length?q.data.map((notification:any)=><div className="border-b p-3" key={notification.id}><div className="flex items-center justify-between"><b>{notification.title}</b>{!notification.read&&<button className="btn-secondary" disabled={markRead.isPending} onClick={()=>markRead.mutate(notification.id)}>Mark read</button>}</div><p className="mt-1 text-sm text-slate-500">{notification.message}</p></div>):<EmptyState message="No notifications."/>}</div>}
+export function Notifications() {
+  const q = useQuery({
+      queryKey: ["notifications"],
+      queryFn: () => get<any[]>("/notifications"),
+    }),
+    qc = useQueryClient();
+  const markRead = useMutation({
+    mutationFn: (id: string) => api.patch(`/notifications/${id}/read`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+  if (q.isPending) return <Loading />;
+  if (q.isError) return <QueryError error={q.error} />;
+  return (
+    <div className="card">
+      <h2 className="mb-4 text-xl font-bold">Notifications</h2>
+      {q.data?.length ? (
+        q.data.map((notification: any) => (
+          <div className="border-b p-3" key={notification.id}>
+            <div className="flex items-center justify-between">
+              <b>{notification.title}</b>
+              {!notification.read && (
+                <button
+                  className="btn-secondary"
+                  disabled={markRead.isPending}
+                  onClick={() => markRead.mutate(notification.id)}
+                >
+                  Mark read
+                </button>
+              )}
+            </div>
+            <p className="mt-1 text-sm text-slate-500">
+              {notification.message}
+            </p>
+          </div>
+        ))
+      ) : (
+        <EmptyState message="No notifications." />
+      )}
+    </div>
+  );
+}
 
-export function Settings(){const q=useQuery({queryKey:["settings"],queryFn:()=>get<any>("/settings")}),[form,setForm]=useState<Record<string,string>>({});useEffect(()=>{if(q.data)setForm(q.data)},[q.data]);const save=useMutation({mutationFn:()=>api.patch("/settings",form)});if(q.isPending)return <Loading/>;if(q.isError)return <QueryError error={q.error}/>;return <form className="card max-w-xl" onSubmit={e=>{e.preventDefault();save.mutate()}}>{["restaurantName","gst","phone","email","address","timezone","currency","receiptFooter"].map(key=><label className="label" key={key}>{key}<input className="field" value={form[key]||""} onChange={e=>setForm({...form,[key]:e.target.value})}/></label>)}{save.isError&&<p className="text-sm text-red-600">{errorMessage(save.error)}</p>}<button className="btn-primary mt-3" disabled={save.isPending}>Save settings</button></form>}
+export function Settings() {
+  const q = useQuery({
+      queryKey: ["settings"],
+      queryFn: () => get<any>("/settings"),
+    }),
+    [form, setForm] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (q.data) setForm(q.data);
+  }, [q.data]);
+  const save = useMutation({ mutationFn: () => api.patch("/settings", form) });
+  if (q.isPending) return <Loading />;
+  if (q.isError) return <QueryError error={q.error} />;
+  return (
+    <form
+      className="card max-w-xl"
+      onSubmit={(e) => {
+        e.preventDefault();
+        save.mutate();
+      }}
+    >
+      {[
+        "restaurantName",
+        "gst",
+        "phone",
+        "email",
+        "address",
+        "timezone",
+        "currency",
+        "receiptFooter",
+      ].map((key) => (
+        <label className="label" key={key}>
+          {key}
+          <input
+            className="field"
+            value={form[key] || ""}
+            onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+          />
+        </label>
+      ))}
+      {save.isError && (
+        <p className="text-sm text-red-600">{errorMessage(save.error)}</p>
+      )}
+      <button className="btn-primary mt-3" disabled={save.isPending}>
+        Save settings
+      </button>
+    </form>
+  );
+}
+
+export * from './MenuManagement';
