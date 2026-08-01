@@ -70,6 +70,7 @@ model MenuItem {
  description String?
  image String?
  categoryId String
+ customCategory String?
  price Float
  costPrice Float
  tax Float @default(0)

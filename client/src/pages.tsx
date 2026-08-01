@@ -12,7 +12,7 @@ import {
 import { ChefHat, Minus, Plus, Printer, Trash2, Search, Edit2, X, Filter } from "lucide-react";
 import { io } from "socket.io-client";
 import { api, get } from "./api";
-import { EmptyState, Loading, money, QueryError } from "./components";
+import { EmptyState, Loading, money, QueryError, PlaceholderImage } from "./components";
 import { useAuthStore, useCartStore } from "./store";
 const CASHIER_ROLE = "CASHIER" as const;
 
@@ -20,11 +20,18 @@ const errorMessage = (error: unknown) =>
   (error as { response?: { data?: { message?: string } } })?.response?.data
     ?.message || "Request failed. Please try again.";
 const defaultFoodImage = "/images/menu/default-food.jpg";
-const menuImage = (name: string) => {
-  const imageUrl = `/images/menu/${name.trim().toLowerCase().replace(/\s+/g, "-")}.jpg`;
-  console.log("Menu product:", { name });
-  console.log("Generated menu image URL:", imageUrl);
-  return imageUrl;
+const getBaseUrl = () => {
+  const url = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+  return url.replace(/\/api$/, "");
+};
+
+const menuImage = (item: any) => {
+  const img = item?.image || item?.menuItem?.image;
+  if (img && img !== "GENERATING") {
+    if (img.startsWith("/")) return `${getBaseUrl()}${img}`;
+    return img;
+  }
+  return null;
 };
 
 export function Login() {
@@ -216,6 +223,12 @@ export function Pos() {
       qc.invalidateQueries({ queryKey: ["tables"] });
     },
   });
+
+  useEffect(() => {
+    const socket = io();
+    socket.on("menu:updated", () => qc.invalidateQueries({ queryKey: ["menu"] }));
+    return () => { socket.close(); };
+  }, [qc]);
   const selected = (orders.data ?? []).find((o: any) => o.id === selectedId);
   const pay = useMutation({
     mutationFn: () =>
@@ -283,18 +296,28 @@ export function Pos() {
                         price: m.price,
                         tax: m.tax,
                         discount: m.discount,
+                        image: m.image,
                       })
                     }
                   >
-                    <img
-                      className="h-[100px] w-full rounded-t-[12px] object-cover shadow-sm"
-                      src={menuImage(m.name)}
-                      alt={m.name}
-                      loading="lazy"
-                      onError={(e) => {
-                        e.currentTarget.src = defaultFoodImage;
-                      }}
-                    />
+                    <div className="relative h-[100px] w-full">
+                      {m.image === "GENERATING" && (
+                        <div className="absolute inset-0 bg-slate-900/80 flex items-center justify-center z-10 text-white font-medium rounded-t-[12px] shadow-inner text-xs flex-col gap-1">
+                          <div className="w-4 h-4 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+                          Generating
+                        </div>
+                      )}
+                      {menuImage(m) ? (
+                        <img
+                          className="h-full w-full rounded-t-[12px] object-cover shadow-sm"
+                          src={menuImage(m)}
+                          alt={m.name}
+                          loading="lazy"
+                        />
+                      ) : (
+                        <PlaceholderImage name={m.name} className="rounded-t-[12px] shadow-sm" />
+                      )}
+                    </div>
                     <div className="p-4">
                       <b>{m.name}</b>
                       <p className="text-xs text-slate-500">
@@ -344,15 +367,23 @@ export function Pos() {
           </select>
           {cart.items.map((item) => (
             <div className="mb-3 flex items-center gap-2" key={item.menuItemId}>
-              <img
-                className="h-[40px] w-[40px] rounded-[12px] object-cover shadow-sm mr-2"
-                src={menuImage(item.name)}
-                alt=""
-                loading="lazy"
-                onError={(e) => {
-                  e.currentTarget.src = defaultFoodImage;
-                }}
-              />
+              <div className="relative h-[40px] w-[40px] mr-2">
+                {item.image === "GENERATING" && (
+                  <div className="absolute inset-0 bg-slate-900/80 flex items-center justify-center z-10 text-white rounded-[12px]">
+                    <div className="w-3 h-3 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+                {menuImage(item) ? (
+                  <img
+                    className="h-full w-full rounded-[12px] object-cover shadow-sm"
+                    src={menuImage(item)}
+                    alt=""
+                    loading="lazy"
+                  />
+                ) : (
+                  <PlaceholderImage name={item.name} className="rounded-[12px] shadow-sm" />
+                )}
+              </div>
               <span className="flex-1">{item.name}</span>
               <button onClick={() => cart.change(item.menuItemId, -1)}>
                 <Minus size={16} />
@@ -525,15 +556,23 @@ export function Kitchen() {
                 </p>
                 {(o.items ?? []).map((i: any) => (
                   <div className="flex items-center gap-2 py-1" key={i.id}>
-                    <img
-                      className="h-[40px] w-[40px] rounded-[12px] object-cover shadow-sm mr-2"
-                      src={menuImage(i.name)}
-                      alt=""
-                      loading="lazy"
-                      onError={(e) => {
-                        e.currentTarget.src = defaultFoodImage;
-                      }}
-                    />
+                    <div className="relative h-[40px] w-[40px] mr-2">
+                      {i.menuItem?.image === "GENERATING" && (
+                        <div className="absolute inset-0 bg-slate-900/80 flex items-center justify-center z-10 text-white rounded-[12px]">
+                          <div className="w-3 h-3 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                      )}
+                      {menuImage(i) ? (
+                        <img
+                          className="h-full w-full rounded-[12px] object-cover shadow-sm"
+                          src={menuImage(i)}
+                          alt=""
+                          loading="lazy"
+                        />
+                      ) : (
+                        <PlaceholderImage name={i.name} className="rounded-[12px] shadow-sm" />
+                      )}
+                    </div>
                     <p className="text-slate-900">
                       {i.quantity} × {i.name}
                     </p>
@@ -655,7 +694,7 @@ export function Orders() {
           </div>
           {q.data.map((o: any) => (
             <button
-              className="grid min-w-[700px] grid-cols-6 gap-3 border-b p-3 text-left hover:bg-slate-50"
+              className={`grid min-w-[700px] grid-cols-6 gap-3 border-b border-slate-700 p-3 text-left transition-colors text-white ${selectedId === o.id ? "bg-slate-800 border-l-4 border-l-orange-500" : "bg-slate-900 hover:bg-slate-700"}`}
               key={o.id}
               onClick={() => setSelectedId(o.id)}
             >
@@ -779,19 +818,26 @@ export function Resource({ type }: { type: string }) {
       {q.data?.length ? (
         isMenu ? (
           q.data.map((x: any) => {
-            const imageUrl = menuImage(x.name);
-            console.log(x);
-            console.log(imageUrl);
+            const imageUrl = menuImage(x);
             return <div className="flex items-center gap-3 border-b p-2" key={x.id}>
-              <img
-                className="h-16 w-16 rounded-[12px] object-cover shadow-sm"
-                src={imageUrl}
-                alt={x.name}
-                loading="lazy"
-                onError={(e) => {
-                  e.currentTarget.src = defaultFoodImage;
-                }}
-              />
+              <div className="relative h-16 w-16">
+                {x.image === "GENERATING" && (
+                  <div className="absolute inset-0 bg-slate-900/80 flex items-center justify-center z-10 text-white rounded-[12px] text-[10px] flex-col text-center leading-tight">
+                    <div className="w-3 h-3 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mb-1"></div>
+                    Generating
+                  </div>
+                )}
+                {imageUrl ? (
+                  <img
+                    className="h-full w-full rounded-[12px] object-cover shadow-sm"
+                    src={imageUrl}
+                    alt={x.name}
+                    loading="lazy"
+                  />
+                ) : (
+                  <PlaceholderImage name={x.name} className="rounded-[12px] shadow-sm" />
+                )}
+              </div>
               <div className="flex-1">
                 {fields.map((field) => (
                   <span className="mr-5" key={field}>

@@ -2,8 +2,14 @@
   "name": "foodflow-pos",
   "private": true,
   "version": "1.0.0",
-  "workspaces": ["client", "server", "shared"],
-  "prisma": { "schema": "server/prisma/schema.prisma" },
+  "workspaces": [
+    "client",
+    "server",
+    "shared"
+  ],
+  "prisma": {
+    "schema": "server/prisma/schema.prisma"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w shared && npm run build -w server && npm run build -w client",
@@ -12,5 +18,11 @@
     "prisma:push": "prisma db push --schema server/prisma/schema.prisma",
     "postinstall": "npm run prisma:generate"
   },
-  "devDependencies": { "concurrently": "^9.1.2", "prisma": "^6.4.1" }
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "prisma": "^6.4.1"
+  },
+  "dependencies": {
+    "openai": "^7.2.0"
+  }
 }

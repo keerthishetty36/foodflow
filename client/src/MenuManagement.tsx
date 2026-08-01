@@ -2,62 +2,74 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Search, Edit2, Trash2, Plus, X, Filter } from "lucide-react";
 import { api, get } from "./api";
-import { Loading, QueryError, money } from "./components";
+import { Loading, QueryError, money, PlaceholderImage } from "./components";
+import { useEffect } from "react";
+import { io } from "socket.io-client";
 
-// Ensure we re-use the exact same logic for menuImage as other places, or just fetch it
-const menuImage = (name: string) => `/images/menu/${name.trim().toLowerCase().replace(/\s+/g, "-")}.jpg`;
-const defaultFoodImage = "/images/menu/default-food.jpg";
+const getBaseUrl = () => {
+  const url = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+  return url.replace(/\/api$/, "");
+};
+
+const menuImage = (item: any) => {
+  const img = item?.image || item?.menuItem?.image;
+  if (img && img !== "GENERATING") {
+    if (img.startsWith("/")) return `${getBaseUrl()}${img}`;
+    return img;
+  }
+  return null;
+};
 
 export function MenuManagement() {
   const qc = useQueryClient();
-  
-  const categoriesQuery = useQuery({ queryKey: ["categories"], queryFn: () => get<any[]>("/categories") });
+
   const menuItemsQuery = useQuery({ queryKey: ["menu-items"], queryFn: () => get<any[]>("/menu-items") });
-  
+  const categoriesQuery = useQuery({ queryKey: ["categories"], queryFn: () => get<any[]>("/categories") });
+  const allCategories = [...(categoriesQuery.data || [])];
+  const othersCategory = { id: "Others", name: "Others" };
+  allCategories.push(othersCategory);
+
   const [activeCategory, setActiveCategory] = useState<string>("ALL");
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState("NEWEST");
   const [filterVeg, setFilterVeg] = useState("ALL");
   const [filterAvailability, setFilterAvailability] = useState("ALL");
   
-  const [categoryModal, setCategoryModal] = useState<{ show: boolean, data: any }>({ show: false, data: null });
   const [menuModal, setMenuModal] = useState<{ show: boolean, data: any }>({ show: false, data: null });
-  const [deleteConfirmation, setDeleteConfirmation] = useState<{ show: boolean, type: "category" | "menu-item", id: string, name: string } | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ show: boolean, id: string, name: string } | null>(null);
   
-  const saveCategory = useMutation({
-    mutationFn: async (data: any) => {
-      const payload = { name: data.name, description: data.description, active: data.active };
-      return data.id ? await api.patch(`/categories/${data.id}`, payload) : await api.post("/categories", payload);
-    },
-    onSuccess: () => {
-      setCategoryModal({ show: false, data: null });
-      qc.invalidateQueries({ queryKey: ["categories"] });
-    },
-  });
+  const [categoryModal, setCategoryModal] = useState<{ show: boolean, data: any }>({ show: false, data: null });
+  const [uploadingImage, setUploadingImage] = useState(false);
 
-  const deleteCategory = useMutation({
-    mutationFn: async (id: string) => await api.delete(`/categories/${id}`),
-    onSuccess: () => {
-      setDeleteConfirmation(null);
-      qc.invalidateQueries({ queryKey: ["categories"] });
-    },
-    onError: (err: any) => {
-      alert(err.response?.data?.message || "Cannot delete category");
-      setDeleteConfirmation(null);
-    }
-  });
+  useEffect(() => {
+    const socket = io();
+    socket.on("menu:updated", () => qc.invalidateQueries({ queryKey: ["menu-items"] }));
+    return () => { socket.close(); };
+  }, [qc]);
 
   const saveMenuItem = useMutation({
     mutationFn: async (data: any) => {
+      let finalCategoryId = data.categoryId;
+      if (finalCategoryId === "Others") {
+        finalCategoryId = categoriesQuery.data?.[0]?.id || "";
+      }
+
       const payload = {
         name: data.name,
-        categoryId: data.categoryId,
-        price: Number(data.price),
-        costPrice: Number(data.costPrice),
-        vegType: data.vegType,
+        categoryId: finalCategoryId,
+        customCategory: data.categoryId === "Others" ? data.customCategory : null,
+        price: data.price !== undefined && data.price !== "" ? Number(data.price) : undefined,
+        costPrice: data.costPrice !== undefined && data.costPrice !== "" ? Number(data.costPrice) : undefined,
+        tax: data.tax !== undefined && data.tax !== "" ? Number(data.tax) : undefined,
+        discount: data.discount !== undefined && data.discount !== "" ? Number(data.discount) : undefined,
+        preparationTime: data.preparationTime !== undefined && data.preparationTime !== "" ? Number(data.preparationTime) : undefined,
+        calories: data.calories !== undefined && data.calories !== "" ? Number(data.calories) : undefined,
+        vegType: ["VEG", "NON_VEG", "EGG"].includes(data.vegType) ? data.vegType : "VEG",
         description: data.description,
-        available: data.available
+        available: data.available !== undefined ? data.available : true,
+        image: data.image || undefined
       };
+      
       return data.id ? await api.patch(`/menu-items/${data.id}`, payload) : await api.post("/menu-items", payload);
     },
     onSuccess: () => {
@@ -65,7 +77,12 @@ export function MenuManagement() {
       qc.invalidateQueries({ queryKey: ["menu-items"] });
     },
     onError: (err: any) => {
-      alert(err.response?.data?.message || "Failed to save menu item");
+      const data = err.response?.data;
+      if (data?.errors) {
+        alert(data.errors.map((e: any) => `- ${e.message}`).join("\n"));
+      } else {
+        alert(data?.message || "Failed to save menu item");
+      }
     }
   });
 
@@ -77,11 +94,36 @@ export function MenuManagement() {
     },
   });
 
-  if (categoriesQuery.isPending || menuItemsQuery.isPending) return <Loading />;
-  if (categoriesQuery.isError) return <QueryError error={categoriesQuery.error} />;
+  const saveCategory = useMutation({
+    mutationFn: async (data: any) => await api.post("/categories", { name: data.name, description: data.description, active: data.active }),
+    onSuccess: () => {
+      setCategoryModal({ show: false, data: null });
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    },
+    onError: (err: any) => {
+      alert(err.response?.data?.message || "Failed to save category");
+    }
+  });
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const { data } = await api.post("/uploads", formData);
+      setMenuModal(prev => ({ ...prev, data: { ...prev.data, image: data.data.url } }));
+    } catch (err: any) {
+      alert("Image upload failed");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  if (menuItemsQuery.isPending) return <Loading />;
   if (menuItemsQuery.isError) return <QueryError error={menuItemsQuery.error} />;
 
-  const categories = categoriesQuery.data || [];
   const allMenuItems = menuItemsQuery.data || [];
 
   let filteredItems = allMenuItems;
@@ -91,8 +133,9 @@ export function MenuManagement() {
   if (search) {
     const s = search.toLowerCase();
     filteredItems = filteredItems.filter((i: any) => {
-      const c = categories.find((cat: any) => cat.id === i.categoryId);
-      return i.name.toLowerCase().includes(s) || (c && c.name.toLowerCase().includes(s));
+      const catName = i.categoryId.toLowerCase();
+      const customName = i.customCategory?.toLowerCase() || "";
+      return i.name.toLowerCase().includes(s) || catName.includes(s) || customName.includes(s);
     });
   }
   if (filterVeg !== "ALL") {
@@ -121,10 +164,11 @@ export function MenuManagement() {
         <div className="p-4 border-b border-slate-700 flex justify-between items-center">
           <h2 className="text-lg font-bold text-white">Categories</h2>
           <button 
-            onClick={() => setCategoryModal({ show: true, data: {} })}
-            className="p-1 rounded bg-orange-600 text-white hover:bg-orange-500"
-            title="Add Category"
-          ><Plus size={18} /></button>
+            onClick={() => setCategoryModal({ show: true, data: { name: "", description: "", active: true } })}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-700 hover:bg-slate-600 text-white transition-colors"
+          >
+            <Plus size={16} />
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           <div 
@@ -133,17 +177,13 @@ export function MenuManagement() {
           >
             All Items
           </div>
-          {categories.map((cat: any) => (
+          {allCategories.map((cat) => (
             <div 
-              key={cat.id} 
+              key={cat.id}
               className={`group flex items-center justify-between cursor-pointer px-3 py-2 rounded-lg ${activeCategory === cat.id ? "bg-brand-600 text-white font-medium" : "hover:bg-slate-700"}`}
               onClick={() => setActiveCategory(cat.id)}
             >
               <span className="truncate">{cat.name}</span>
-              <div className="hidden group-hover:flex items-center gap-1">
-                <button onClick={(e) => { e.stopPropagation(); setCategoryModal({ show: true, data: cat }); }} className="p-1 text-slate-300 hover:text-white"><Edit2 size={14} /></button>
-                <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmation({ show: true, type: "category", id: cat.id, name: cat.name }); }} className="p-1 text-red-400 hover:text-red-300"><Trash2 size={14} /></button>
-              </div>
             </div>
           ))}
         </div>
@@ -183,7 +223,7 @@ export function MenuManagement() {
             </select>
           </div>
           <button 
-            onClick={() => setMenuModal({ show: true, data: { categoryId: activeCategory === "ALL" ? (categories[0]?.id || "") : activeCategory, vegType: "VEG", available: true, price: "", costPrice: "" } })}
+            onClick={() => setMenuModal({ show: true, data: { categoryId: activeCategory === "ALL" ? (allCategories[0]?.id || "Others") : activeCategory, vegType: "VEG", available: true, price: "", costPrice: "", customCategory: "", image: null } })}
             className="flex items-center gap-2 bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-medium shadow"
           >
             <Plus size={18} /> Add Menu Item
@@ -195,7 +235,7 @@ export function MenuManagement() {
             <div className="h-full flex flex-col items-center justify-center text-slate-500">
               <p className="mb-4">No menu items found.</p>
               <button 
-                onClick={() => setMenuModal({ show: true, data: { categoryId: activeCategory === "ALL" ? (categories[0]?.id || "") : activeCategory, vegType: "VEG", available: true, price: "", costPrice: "" } })}
+                onClick={() => setMenuModal({ show: true, data: { categoryId: activeCategory === "ALL" ? (allCategories[0]?.id || "Others") : activeCategory, vegType: "VEG", available: true, price: "", costPrice: "", customCategory: "", image: null } })}
                 className="flex items-center gap-2 text-brand-500 hover:text-brand-400"
               ><Plus size={16} /> Add Menu Item</button>
             </div>
@@ -204,12 +244,23 @@ export function MenuManagement() {
               {filteredItems.map((item: any) => (
                 <div key={item.id} className="bg-slate-800 rounded-2xl border border-slate-700 shadow-md overflow-hidden flex flex-col">
                   <div className="relative h-40">
-                    <img 
-                      src={menuImage(item.name)} 
-                      alt={item.name} 
-                      className="w-full h-full object-cover"
-                      onError={(e) => { e.currentTarget.src = defaultFoodImage; }}
-                    />
+                    {item.image === "GENERATING" ? (
+                      <div className="absolute inset-0 bg-slate-900/80 flex items-center justify-center z-10 text-white font-medium shadow-inner">
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+                          <span className="text-sm">Generating Image...</span>
+                        </div>
+                      </div>
+                    ) : null}
+                    {menuImage(item) ? (
+                      <img 
+                        src={menuImage(item)}
+                        alt={item.name} 
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <PlaceholderImage name={item.name} />
+                    )}
                     <div className="absolute top-2 right-2 flex gap-1">
                       {item.vegType === "VEG" && <span className="bg-green-600 text-xs px-2 py-1 rounded text-white font-bold">VEG</span>}
                       {item.vegType === "NON_VEG" && <span className="bg-red-600 text-xs px-2 py-1 rounded text-white font-bold">NON VEG</span>}
@@ -221,7 +272,9 @@ export function MenuManagement() {
                       <h3 className="font-bold text-lg text-white">{item.name}</h3>
                       <span className="font-bold text-brand-500">{money(item.price)}</span>
                     </div>
-                    <p className="text-sm text-slate-400 mb-2">{categories.find((c: any) => c.id === item.categoryId)?.name || "Unknown Category"}</p>
+                    <p className="text-sm text-slate-400 mb-2">
+                      {item.categoryId === "Others" && item.customCategory ? item.customCategory : item.categoryId}
+                    </p>
                     <p className="text-sm text-slate-300 flex-1 line-clamp-2">{item.description}</p>
                     
                     <div className="mt-4 flex items-center justify-between border-t border-slate-700 pt-3">
@@ -230,7 +283,7 @@ export function MenuManagement() {
                       </span>
                       <div className="flex items-center gap-2">
                         <button onClick={() => setMenuModal({ show: true, data: item })} className="p-1.5 text-slate-300 hover:text-white bg-slate-700 rounded-lg hover:bg-slate-600"><Edit2 size={16} /></button>
-                        <button onClick={() => setDeleteConfirmation({ show: true, type: "menu-item", id: item.id, name: item.name })} className="p-1.5 text-red-400 hover:text-red-300 bg-slate-700 rounded-lg hover:bg-slate-600"><Trash2 size={16} /></button>
+                        <button onClick={() => setDeleteConfirmation({ show: true, id: item.id, name: item.name })} className="p-1.5 text-red-400 hover:text-red-300 bg-slate-700 rounded-lg hover:bg-slate-600"><Trash2 size={16} /></button>
                       </div>
                     </div>
                   </div>
@@ -240,36 +293,6 @@ export function MenuManagement() {
           )}
         </div>
       </div>
-
-      {/* Category Modal */}
-      {categoryModal.show && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-2xl w-full max-w-md shadow-2xl border border-slate-700 flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-slate-700">
-              <h3 className="font-bold text-lg text-white">{categoryModal.data.id ? "Edit Category" : "Add Category"}</h3>
-              <button onClick={() => setCategoryModal({ show: false, data: null })} className="text-slate-400 hover:text-white"><X size={20} /></button>
-            </div>
-            <form onSubmit={(e) => { e.preventDefault(); saveCategory.mutate(categoryModal.data); }} className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Category Name</label>
-                <input required autoFocus type="text" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-brand-500" value={categoryModal.data.name || ""} onChange={e => setCategoryModal({ ...categoryModal, data: { ...categoryModal.data, name: e.target.value } })} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Description (Optional)</label>
-                <textarea className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-brand-500" value={categoryModal.data.description || ""} onChange={e => setCategoryModal({ ...categoryModal, data: { ...categoryModal.data, description: e.target.value } })} />
-              </div>
-              <div className="flex items-center gap-2">
-                <input type="checkbox" id="cat-active" checked={categoryModal.data.active !== false} onChange={e => setCategoryModal({ ...categoryModal, data: { ...categoryModal.data, active: e.target.checked } })} />
-                <label htmlFor="cat-active" className="text-sm font-medium">Active Status</label>
-              </div>
-              <div className="pt-4 flex justify-end gap-3">
-                <button type="button" onClick={() => setCategoryModal({ show: false, data: null })} className="px-4 py-2 text-slate-300 hover:text-white">Cancel</button>
-                <button type="submit" disabled={saveCategory.isPending} className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium disabled:opacity-50">Save</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Menu Item Modal */}
       {menuModal.show && (
@@ -290,9 +313,17 @@ export function MenuManagement() {
                     <label className="block text-sm font-medium mb-1">Category</label>
                     <select required className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-brand-500" value={menuModal.data.categoryId || ""} onChange={e => setMenuModal({ ...menuModal, data: { ...menuModal.data, categoryId: e.target.value } })}>
                       <option value="" disabled>Select Category</option>
-                      {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      {allCategories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
+
+                  {menuModal.data.categoryId === "Others" && (
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium mb-1">Custom Category Name</label>
+                      <input required type="text" placeholder="e.g. Tandoor Specials" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-brand-500" value={menuModal.data.customCategory || ""} onChange={e => setMenuModal({ ...menuModal, data: { ...menuModal.data, customCategory: e.target.value } })} />
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-sm font-medium mb-1">Price</label>
                     <input required type="number" step="0.01" min="0" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-brand-500" value={menuModal.data.price} onChange={e => setMenuModal({ ...menuModal, data: { ...menuModal.data, price: e.target.value } })} />
@@ -319,6 +350,19 @@ export function MenuManagement() {
                     <label className="block text-sm font-medium mb-1">Description (Optional)</label>
                     <textarea rows={3} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-brand-500" value={menuModal.data.description || ""} onChange={e => setMenuModal({ ...menuModal, data: { ...menuModal.data, description: e.target.value } })} />
                   </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-1">Image Upload (Optional)</label>
+                    <input 
+                      type="file" 
+                      accept="image/png, image/jpeg, image/webp" 
+                      onChange={handleImageUpload}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-brand-500" 
+                    />
+                    {uploadingImage && <p className="text-sm text-brand-500 mt-1">Uploading...</p>}
+                    {menuModal.data.image && (
+                      <img src={menuModal.data.image.startsWith("/") ? `${getBaseUrl()}${menuModal.data.image}` : menuModal.data.image} alt="Preview" className="h-20 object-cover mt-2 rounded" />
+                    )}
+                  </div>
                 </div>
               </form>
             </div>
@@ -335,11 +379,42 @@ export function MenuManagement() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-800 rounded-2xl w-full max-w-sm shadow-2xl border border-slate-700 p-6 text-center">
             <Trash2 size={40} className="mx-auto text-red-500 mb-4" />
-            <h3 className="font-bold text-xl text-white mb-2">Delete {deleteConfirmation.type === "category" ? "Category" : "Menu Item"}?</h3>
+            <h3 className="font-bold text-xl text-white mb-2">Delete Menu Item?</h3>
             <p className="text-slate-300 mb-6">Are you sure you want to delete <b className="text-white">{deleteConfirmation.name}</b>? This action cannot be undone.</p>
             <div className="flex justify-center gap-3">
               <button onClick={() => setDeleteConfirmation(null)} className="flex-1 px-4 py-2 text-slate-300 hover:bg-slate-700 rounded-lg font-medium">Cancel</button>
-              <button onClick={() => deleteConfirmation.type === "category" ? deleteCategory.mutate(deleteConfirmation.id) : deleteMenuItem.mutate(deleteConfirmation.id)} disabled={deleteCategory.isPending || deleteMenuItem.isPending} className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium disabled:opacity-50">Delete</button>
+              <button onClick={() => deleteMenuItem.mutate(deleteConfirmation.id)} disabled={deleteMenuItem.isPending} className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium disabled:opacity-50">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Category Modal */}
+      {categoryModal.show && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-2xl w-full max-w-sm shadow-2xl border border-slate-700">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <h3 className="font-bold text-lg text-white">Add Category</h3>
+              <button onClick={() => setCategoryModal({ show: false, data: null })} className="text-slate-400 hover:text-white"><X size={20} /></button>
+            </div>
+            <div className="p-4">
+              <form id="category-form" onSubmit={(e) => { e.preventDefault(); saveCategory.mutate(categoryModal.data); }} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Category Name</label>
+                  <input required autoFocus type="text" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-brand-500" value={categoryModal.data.name || ""} onChange={e => setCategoryModal({ ...categoryModal, data: { ...categoryModal.data, name: e.target.value } })} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Description (Optional)</label>
+                  <textarea rows={2} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 outline-none focus:border-brand-500" value={categoryModal.data.description || ""} onChange={e => setCategoryModal({ ...categoryModal, data: { ...categoryModal.data, description: e.target.value } })} />
+                </div>
+                <div className="flex items-center gap-2 pt-2">
+                  <input type="checkbox" id="cat-active" className="w-4 h-4" checked={categoryModal.data.active !== false} onChange={e => setCategoryModal({ ...categoryModal, data: { ...categoryModal.data, active: e.target.checked } })} />
+                  <label htmlFor="cat-active" className="text-sm font-medium">Active</label>
+                </div>
+              </form>
+            </div>
+            <div className="p-4 border-t border-slate-700 flex justify-end gap-3">
+              <button type="button" onClick={() => setCategoryModal({ show: false, data: null })} className="px-4 py-2 text-slate-300 hover:text-white">Cancel</button>
+              <button form="category-form" type="submit" disabled={saveCategory.isPending} className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium disabled:opacity-50">Save</button>
             </div>
           </div>
         </div>
