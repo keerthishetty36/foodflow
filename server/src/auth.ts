@@ -25,12 +25,13 @@ export async function verifyAndMigratePassword(userId: string, password: string,
 
 export const signAccess = (user: { id: string; role: RoleEnum; email: string }) => jwt.sign({ sub: user.id, role: user.role, email: user.email }, env.JWT_ACCESS_SECRET, { expiresIn: "15m" });
 export const signRefresh = (user: { id: string; role: RoleEnum; email: string }) => jwt.sign({ sub: user.id, role: user.role, email: user.email }, env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
-export function setRefreshCookie(res: Response, token: string) { res.cookie("refreshToken", token, { httpOnly: true, secure: env.NODE_ENV === "production", sameSite: "strict", maxAge: 7 * 86400000, path: "/api/auth" }); }
+export function setRefreshCookie(res: Response, token: string) { res.cookie("refreshToken", token, { httpOnly: true, secure: env.NODE_ENV === "production", sameSite: "lax", maxAge: 7 * 86400000, path: "/api/auth" }); }
+export function setAccessCookie(res: Response, token: string) { res.cookie("accessToken", token, { httpOnly: true, secure: env.NODE_ENV === "production", sameSite: "lax", maxAge: 900000, path: "/" }); }
 export async function authenticate(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const configurationError = authConfigurationError();
     if (configurationError) return res.status(503).json({ message: configurationError });
-    const raw = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+    const raw = req.cookies.accessToken || req.headers.authorization?.replace(/^Bearer\s+/i, "");
     if (!raw) return res.status(401).json({ message: "Authentication required" });
     const payload = jwt.verify(raw, env.JWT_ACCESS_SECRET) as JwtPayload;
     const user = await prisma.user.findUnique({ where: { id: payload.sub }, include: { customRole: true } });

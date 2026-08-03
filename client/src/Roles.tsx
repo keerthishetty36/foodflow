@@ -81,7 +81,7 @@ export function Roles() {
                   <td className="py-3 px-4 text-slate-500 group-hover:text-[#374151] transition-colors">{r.description || "-"}</td>
                   <td className="py-3 px-4">
                     <span className="inline-flex items-center px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium">
-                      {r.permissions.length} permissions
+                      {new Set((r.permissions || []).filter((p: string) => p === "*" || AVAILABLE_PERMISSIONS.includes(p))).size} permissions
                     </span>
                   </td>
                   <td className="py-3 px-4 text-right">

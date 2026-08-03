@@ -77,15 +77,15 @@ export function Users() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {users.map((u: any) => (
-                <tr key={u.id} className="hover:bg-slate-50">
-                  <td className="py-3 px-4 font-medium">{u.name}</td>
-                  <td className="py-3 px-4 text-slate-500">{u.email}</td>
+                <tr key={u.id} className="hover:bg-[#F8FAFC] group transition-colors duration-200">
+                  <td className="py-3 px-4 font-medium group-hover:text-[#111827] transition-colors duration-200">{u.name}</td>
+                  <td className="py-3 px-4 text-slate-500 group-hover:text-[#374151] transition-colors duration-200">{u.email}</td>
                   <td className="py-3 px-4">
                     <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${u.role === 'ADMIN' ? 'bg-purple-50 text-purple-700' : 'bg-slate-100 text-slate-700'}`}>
                       {u.role}
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-slate-500">{u.customRole?.name || "-"}</td>
+                  <td className="py-3 px-4 text-slate-500 group-hover:text-[#374151] transition-colors duration-200">{u.customRole?.name || "-"}</td>
                   <td className="py-3 px-4">
                     <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${u.active ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                       {u.active ? "Active" : "Disabled"}
@@ -93,10 +93,10 @@ export function Users() {
                   </td>
                   <td className="py-3 px-4 text-right">
                     <div className="flex justify-end gap-2">
-                      <button className="p-2 border rounded-md" onClick={() => { setForm({ name: u.name, email: u.email, password: "", roleId: u.customRole?.id || "", role: u.role }); setEditing(u); setError(null); }}>
+                      <button className="p-2 border rounded-md group-hover:text-[#111827] group-hover:border-slate-300 transition-colors duration-200" onClick={() => { setForm({ name: u.name, email: u.email, password: "", roleId: u.customRole?.id || "", role: u.role }); setEditing(u); setError(null); }}>
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button className="p-2 border rounded-md" onClick={() => { if(confirm("Are you sure?")) remove.mutate(u.id); }}>
+                      <button className="p-2 border rounded-md group-hover:border-slate-300 transition-colors duration-200" onClick={() => { if(confirm("Are you sure?")) remove.mutate(u.id); }}>
                         <Trash2 className="w-4 h-4 text-red-500" />
                       </button>
                     </div>

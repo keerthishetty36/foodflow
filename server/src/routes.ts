@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { logger, prisma } from "./lib.js";
 import { env } from "./config.js";
-import { requirePermission, authConfigurationError, hashPassword, authenticate, setRefreshCookie, signAccess, signRefresh, verifyAndMigratePassword } from "./auth.js";
+import { requirePermission, authConfigurationError, hashPassword, authenticate, setRefreshCookie, setAccessCookie, signAccess, signRefresh, verifyAndMigratePassword } from "./auth.js";
 import { asyncHandler, audit, pagination } from "./utils.js";
 import { emit } from "./realtime.js";
 import { writeReceipt } from "./receipt.js";
@@ -28,10 +28,11 @@ router.post("/auth/login", asyncHandler(async (req, res) => {
     const refreshToken = signRefresh(user);
     await prisma.user.update({ where: { id: user.id }, data: { refreshToken } });
     setRefreshCookie(res, refreshToken);
+    setAccessCookie(res, accessToken);
     await prisma.auditLog.create({ data: { userId: user.id, action: "LOGIN", entity: "User", entityId: user.id } });
     logger.info("JWT generated and login successful", { userId: user.id, role: user.role });
     const permissions = user.customRole?.permissions || (user.role === RoleEnum.ADMIN ? ["*"] : ["pos.view", "pos.bill", "orders.view", "orders.update", "tables.view", "menu.read"]);
-    return res.json({ data: { accessToken, refreshToken, user: { id: user.id, name: user.name, email: user.email, role: user.role, permissions }, role: user.role } });
+    return res.json({ data: { user: { id: user.id, name: user.name, email: user.email, role: user.role, permissions }, role: user.role } });
   } catch (error) {
     logger.error("Login failed due to server error", { email, reason: error instanceof Error ? error.message : "Unknown error" });
     return res.status(503).json({ message: "Database connection failed. Please try again shortly." });
@@ -50,11 +51,12 @@ router.post("/auth/refresh", asyncHandler(async (req, res) => {
     const accessToken = signAccess(user);
     await prisma.user.update({ where: { id: user.id }, data: { refreshToken } });
     setRefreshCookie(res, refreshToken);
+    setAccessCookie(res, accessToken);
     const permissions = user.customRole?.permissions || (user.role === RoleEnum.ADMIN ? ["*"] : ["pos.view", "pos.bill", "orders.view", "orders.update", "tables.view", "menu.read"]);
-    return res.json({ data: { accessToken, refreshToken, user: { id: user.id, name: user.name, email: user.email, role: user.role, permissions }, role: user.role } });
+    return res.json({ data: { user: { id: user.id, name: user.name, email: user.email, role: user.role, permissions }, role: user.role } });
   } catch (error) { logger.warn("Refresh token rejected", { reason: error instanceof Error ? error.message : "Unknown error" }); return res.status(401).json({ message: "Invalid or expired refresh token" }); }
 }));
-router.post("/auth/logout", authenticate, asyncHandler(async (req: AuthRequest, res) => { await prisma.user.update({ where: { id: req.user!.sub }, data: { refreshToken: null } }); res.clearCookie("refreshToken", { path: "/api/auth" }); await audit(req, "LOGOUT", "User", req.user!.sub); res.status(204).end() }));
+router.post("/auth/logout", authenticate, asyncHandler(async (req: AuthRequest, res) => { await prisma.user.update({ where: { id: req.user!.sub }, data: { refreshToken: null } }); res.clearCookie("refreshToken", { path: "/api/auth" }); res.clearCookie("accessToken", { path: "/" }); await audit(req, "LOGOUT", "User", req.user!.sub); res.status(204).end() }));
 router.get("/auth/me", authenticate, asyncHandler(async (req: AuthRequest, res) => { const user = await prisma.user.findUnique({ where: { id: req.user!.sub }, select: { id: true, name: true, email: true, role: true, active: true } }); res.json({ data: user }) }));
 
 router.get("/dashboard", authenticate, requirePermission("dashboard.view"), asyncHandler(async (_req, res) => { const start = new Date(); start.setHours(0, 0, 0, 0); const [payments, pending, lowStock, top] = await Promise.all([prisma.payment.findMany({ where: { status: PaymentStatus.PAID, paidAt: { gte: start } }, include: { order: { include: { items: true, table: true, customer: true } } }, orderBy: { paidAt: "desc" } }), prisma.order.count({ where: { status: { in: [OrderStatus.PENDING, OrderStatus.ACCEPTED, OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.SERVED] } } }), prisma.inventory.findMany({ where: { quantity: { lte: 0 } } }), prisma.orderItem.groupBy({ by: ["name"], _sum: { quantity: true }, orderBy: { _sum: { quantity: "desc" } }, take: 5 })]); const paidOrders = [...new Map(payments.map(p => [p.orderId, p.order])).values()], sales = payments.reduce((sum, payment) => sum + payment.amount, 0), profit = paidOrders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + (item.unitPrice - item.costPrice) * item.quantity, 0), 0); res.json({ data: { todaySales: sales, revenue: sales, todayProfit: profit, orders: paidOrders.length, totalPaidOrders: paidOrders.length, runningOrders: pending, completedOrders: paidOrders.length, lowStock, recentOrders: payments.slice(0, 8).map(payment => ({ ...payment.order, grandTotal: payment.amount, paymentMethod: payment.method, paidAt: payment.paidAt })), recentPayments: payments.slice(0, 8), topSelling: top } }) }));
