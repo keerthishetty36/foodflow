@@ -861,6 +861,49 @@ export function Resource({ type }: { type: string }) {
               </button>
             </div>
           })
+        ) : type === "tables" ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 p-2">
+            {q.data.map((x: any) => (
+              <div 
+                key={x.id}
+                className="bg-slate-800 rounded-xl p-5 border border-slate-700 shadow-md transition-all duration-300 hover:-translate-y-1 hover:border-orange-500 flex flex-col group"
+              >
+                <div className="flex justify-between items-start mb-6">
+                  <h3 className="text-xl font-bold text-white tracking-wide">{x.name}</h3>
+                  <button
+                    className="p-2 text-slate-400 hover:text-white bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
+                    onClick={() => {
+                      setEditingId(x.id);
+                      setForm(Object.fromEntries(fields.map((field) => [field, x[field] ?? ""])));
+                      setShow(true);
+                    }}
+                    title="Edit Table"
+                  >
+                    <Edit2 size={16} />
+                  </button>
+                </div>
+                
+                <div className="flex flex-col gap-4 mt-auto">
+                  <div className="flex justify-between items-center text-slate-300">
+                    <span className="font-medium text-sm">Capacity :</span>
+                    <span className="font-bold text-white">{x.capacity}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium text-sm text-slate-300">Status :</span>
+                    <span className={`text-xs px-3 py-1 rounded-full font-bold text-white shadow-sm ${
+                      x.status === "AVAILABLE" ? "bg-green-600" :
+                      x.status === "OCCUPIED" ? "bg-red-600" :
+                      x.status === "RESERVED" ? "bg-yellow-600" :
+                      x.status === "CLEANING" ? "bg-blue-600" :
+                      "bg-slate-600"
+                    }`}>
+                      {x.status ? x.status.charAt(0) + x.status.slice(1).toLowerCase() : "Available"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           q.data.map((x: any) => (
             <div className="border-b p-2" key={x.id}>

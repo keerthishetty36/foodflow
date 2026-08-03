@@ -29,6 +29,7 @@ export const env = {
   DATABASE_URL: process.env.DATABASE_URL?.trim() ?? "",
   JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET?.trim() ?? "",
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET?.trim() ?? "",
+  UPLOADTHING_TOKEN: process.env.UPLOADTHING_TOKEN?.trim() ?? "",
   CLIENT_ORIGIN: process.env.CLIENT_ORIGIN?.trim() || "http://localhost:5173",
   PORT: Number(process.env.PORT) || 4000,
   NODE_ENV: process.env.NODE_ENV === "production" ? "production" : process.env.NODE_ENV === "test" ? "test" : "development"

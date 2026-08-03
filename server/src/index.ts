@@ -8,6 +8,7 @@ import rateLimit from "express-rate-limit";
 import { Server } from "socket.io";
 import swaggerUi from "swagger-ui-express";
 import multer from "multer";
+import { UTApi } from "uploadthing/server";
 import routes from "./routes.js";
 import { env, environmentDiagnostic, environmentSummary, missingEnvironmentKeys } from "./config.js";
 import { connectDatabase, ensureDefaultUsers, ensureSparseMenuItemUniqueIndexes, logger } from "./lib.js";
@@ -25,9 +26,25 @@ app.use(cors({ origin: (origin, callback) => callback(null, isAllowedOrigin(orig
 app.use(rateLimit({ windowMs: 15 * 60e3, max: 500 }));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
-app.use("/uploads", express.static("uploads"));
-const upload = multer({ dest: "uploads/", limits: { fileSize: 5 * 1024 * 1024 } });
-app.post("/api/uploads", upload.single("file"), (req, res) => !req.file ? res.status(400).json({ message: "File required" }) : res.status(201).json({ data: { url: `/uploads/${req.file.filename}` } }));
+const utapi = new UTApi({ token: env.UPLOADTHING_TOKEN });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+app.post("/api/uploads", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: "File required" });
+  logger.info("Uploading image to UploadThing...");
+  try {
+    const file = new File([req.file.buffer], req.file.originalname, { type: req.file.mimetype });
+    const response = await utapi.uploadFiles([file]);
+    if (response[0].error) {
+      logger.error("Upload failed", { reason: response[0].error.message });
+      return res.status(500).json({ message: "Upload failed: " + response[0].error.message });
+    }
+    logger.info("Upload successful", { url: response[0].data.url });
+    return res.status(201).json({ data: { url: response[0].data.url } });
+  } catch (error) {
+    logger.error("Upload failed", { reason: error instanceof Error ? error.message : "Unknown error" });
+    return res.status(500).json({ message: "Upload failed" });
+  }
+});
 app.get("/health", (_req, res) => res.status(missingEnvironmentKeys.length ? 503 : 200).json({ status: missingEnvironmentKeys.length ? "configuration_required" : "ok", diagnostic: environmentDiagnostic() }));
 app.use("/api", routes);
 app.use("/docs", swaggerUi.serve, swaggerUi.setup({ openapi: "3.0.0", info: { title: "FoodFlow POS API", version: "1.0.0" }, paths: { "/api/auth/login": { post: { summary: "Authenticate user" } } } }));
