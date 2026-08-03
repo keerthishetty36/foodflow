@@ -46,6 +46,9 @@ app.post("/api/uploads", upload.single("file"), async (req, res) => {
   }
 });
 app.get("/health", (_req, res) => res.status(missingEnvironmentKeys.length ? 503 : 200).json({ status: missingEnvironmentKeys.length ? "configuration_required" : "ok", diagnostic: environmentDiagnostic() }));
+import aiRoutes from "./ai/router.js";
+
+app.use("/api/ai", aiRoutes);
 app.use("/api", routes);
 app.use("/docs", swaggerUi.serve, swaggerUi.setup({ openapi: "3.0.0", info: { title: "FoodFlow POS API", version: "1.0.0" }, paths: { "/api/auth/login": { post: { summary: "Authenticate user" } } } }));
 app.use((error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => { logger.error("Unhandled API error", { message: error.message, stack: error.stack }); if (error.name === "ZodError") return res.status(422).json({ message: "Validation failed", errors: error.issues }); if (error.code === "P2002") return res.status(409).json({ message: "A record with that value already exists" }); return res.status(error.status || 500).json({ message: error.message || "Internal server error" }); });
