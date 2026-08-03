@@ -1,7 +1,7 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import type { Response, NextFunction } from "express";
-import { Role } from "@prisma/client";
+import { RoleEnum } from "@prisma/client";
 import { env, environmentDiagnostic, missingEnvironmentKeys } from "./config.js";
 import { logger, prisma } from "./lib.js";
 import type { AuthRequest, JwtPayload } from "./types.js";
@@ -23,23 +23,34 @@ export async function verifyAndMigratePassword(userId: string, password: string,
   return true;
 }
 
-export const signAccess = (user: { id: string; role: Role; email: string }) => jwt.sign({ sub: user.id, role: user.role, email: user.email }, env.JWT_ACCESS_SECRET, { expiresIn: "15m" });
-export const signRefresh = (user: { id: string; role: Role; email: string }) => jwt.sign({ sub: user.id, role: user.role, email: user.email }, env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
-export function setRefreshCookie(res: Response, token: string) { res.cookie("refreshToken", token, { httpOnly: true, secure: env.NODE_ENV === "production", sameSite: "lax", maxAge: 7 * 86400000, path: "/api/auth" }); }
-export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+export const signAccess = (user: { id: string; role: RoleEnum; email: string }) => jwt.sign({ sub: user.id, role: user.role, email: user.email }, env.JWT_ACCESS_SECRET, { expiresIn: "15m" });
+export const signRefresh = (user: { id: string; role: RoleEnum; email: string }) => jwt.sign({ sub: user.id, role: user.role, email: user.email }, env.JWT_REFRESH_SECRET, { expiresIn: "7d" });
+export function setRefreshCookie(res: Response, token: string) { res.cookie("refreshToken", token, { httpOnly: true, secure: env.NODE_ENV === "production", sameSite: "strict", maxAge: 7 * 86400000, path: "/api/auth" }); }
+export async function authenticate(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const configurationError = authConfigurationError();
     if (configurationError) return res.status(503).json({ message: configurationError });
     const raw = req.headers.authorization?.replace(/^Bearer\s+/i, "");
     if (!raw) return res.status(401).json({ message: "Authentication required" });
     const payload = jwt.verify(raw, env.JWT_ACCESS_SECRET) as JwtPayload;
-    const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+    const user = await prisma.user.findUnique({ where: { id: payload.sub }, include: { customRole: true } });
     if (!user?.active) return res.status(401).json({ message: "Session is no longer valid" });
-    req.user = payload;
+    
+    // Attach permissions. Fallback for legacy ADMIN enum if role is missing.
+    const permissions = user.customRole?.permissions || (user.role === RoleEnum.ADMIN ? ["*"] : ["pos.view", "pos.bill", "orders.view", "orders.update", "tables.view", "menu.read"]);
+    
+    req.user = { ...payload, permissions };
     next();
   } catch (error) {
     logger.warn("Authentication middleware rejected token", { reason: error instanceof Error ? error.message : "Unknown JWT error" });
     return res.status(401).json({ message: "Invalid or expired access token" });
   }
 }
-export const allow = (...roles: Role[]) => (req: AuthRequest, res: Response, next: NextFunction) => !req.user || !roles.includes(req.user.role) ? res.status(403).json({ message: "Insufficient permissions" }) : next();
+export const requirePermission = (permission: string) => (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!req.user) return res.status(403).json({ message: "Forbidden" });
+  if (req.user.permissions.includes("*") || req.user.permissions.includes(permission)) return next();
+  return res.status(403).json({ message: "Forbidden: Missing " + permission });
+};
+// Legacy checks kept temporarily, though endpoints should migrate to requirePermission
+export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction) => !req.user || (req.user.role !== RoleEnum.ADMIN && !req.user.permissions.includes("*")) ? res.status(403).json({ message: "Forbidden" }) : next();
+export const requireCashier = (req: AuthRequest, res: Response, next: NextFunction) => !req.user ? res.status(403).json({ message: "Forbidden" }) : next();

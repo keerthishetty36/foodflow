@@ -5,7 +5,7 @@ datasource db {
   provider = "mongodb"
   url = env("DATABASE_URL")
 }
-enum Role {
+enum RoleEnum {
  ADMIN
  CASHIER
 }
@@ -42,12 +42,24 @@ enum VegType {
  NON_VEG
  EGG
 }
+model Role {
+ id String @id @default(auto()) @map("_id") @db.ObjectId
+ name String @unique
+ description String?
+ permissions String[]
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ users User[]
+}
+
 model User {
  id String @id @default(auto()) @map("_id") @db.ObjectId
  name String
  email String @unique
  passwordHash String
- role Role @default(CASHIER)
+ role RoleEnum @default(CASHIER)
+ roleId String? @db.ObjectId
+ customRole Role? @relation(fields:[roleId], references:[id])
  active Boolean @default(true)
  refreshToken String?
  createdAt DateTime @default(now())
@@ -55,6 +67,7 @@ model User {
  orders Order[]
  auditLogs AuditLog[]
 }
+
 model Category {
  id String @id @default(auto()) @map("_id") @db.ObjectId
  name String @unique

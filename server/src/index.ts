@@ -11,7 +11,7 @@ import multer from "multer";
 import { UTApi } from "uploadthing/server";
 import routes from "./routes.js";
 import { env, environmentDiagnostic, environmentSummary, missingEnvironmentKeys } from "./config.js";
-import { connectDatabase, ensureDefaultUsers, ensureSparseMenuItemUniqueIndexes, logger } from "./lib.js";
+import { connectDatabase, ensureDefaultRoles, ensureDefaultUsers, ensureSparseMenuItemUniqueIndexes, logger } from "./lib.js";
 import { setIo } from "./realtime.js";
 
 const allowedOrigins = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"];
@@ -58,6 +58,8 @@ async function start() {
   logger.info("\u2713 Connecting to MongoDB...");
   await connectDatabase(3);
   await ensureSparseMenuItemUniqueIndexes();
+  logger.info("Ensuring default roles...");
+  await ensureDefaultRoles();
   logger.info("Creating default users if missing...");
   await ensureDefaultUsers();
   logger.info("Socket.io ready");

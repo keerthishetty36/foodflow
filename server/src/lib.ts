@@ -1,4 +1,4 @@
-import { PrismaClient, Role } from "@prisma/client";
+import { PrismaClient, RoleEnum } from "@prisma/client";
 import bcrypt from "bcrypt";
 import { env, environmentDiagnostic } from "./config.js";
 import winston from "winston";
@@ -56,19 +56,47 @@ export async function connectDatabase(retries = 3): Promise<void> {
   throw lastError instanceof Error ? lastError : new Error("MongoDB connection failed after all retry attempts.");
 }
 
+export async function ensureDefaultRoles(): Promise<void> {
+  const defaultRoles = [
+    { name: "Administrator", description: "Full system access", permissions: ["dashboard.view", "pos.view", "pos.bill", "kitchen.view", "orders.view", "orders.update", "orders.delete", "tables.view", "menu.read", "menu.write", "menu.delete", "inventory.read", "inventory.write", "inventory.delete", "suppliers.view", "suppliers.write", "reports.view", "notifications.view", "settings.view", "settings.edit", "users.create", "users.edit", "users.delete", "roles.create", "roles.edit", "roles.delete"] },
+    { name: "Cashier", description: "Point of sale and orders", permissions: ["pos.view", "pos.bill", "kitchen.view", "orders.view", "tables.view"] },
+    { name: "Manager", description: "Store management", permissions: ["dashboard.view", "pos.view", "orders.view", "kitchen.view", "reports.view", "menu.read", "menu.write", "tables.view", "inventory.read", "inventory.write"] },
+    { name: "Kitchen Staff", description: "Kitchen operations", permissions: ["kitchen.view", "orders.view"] },
+    { name: "Inventory Staff", description: "Inventory management", permissions: ["inventory.read", "inventory.write", "suppliers.view", "suppliers.write"] }
+  ];
+
+  for (const roleDef of defaultRoles) {
+    await prisma.role.upsert({
+      where: { name: roleDef.name },
+      update: {},
+      create: roleDef
+    });
+  }
+  
+  // Backward compatibility link
+  const adminRole = await prisma.role.findUnique({ where: { name: "Administrator" } });
+  const cashierRole = await prisma.role.findUnique({ where: { name: "Cashier" } });
+  if (adminRole) await prisma.user.updateMany({ where: { role: "ADMIN", roleId: null }, data: { roleId: adminRole.id } });
+  if (cashierRole) await prisma.user.updateMany({ where: { role: "CASHIER", roleId: null }, data: { roleId: cashierRole.id } });
+  
+  logger.info("Ensured default roles exist and backward compatibility linked");
+}
+
 export async function ensureAdminUser(): Promise<void> {
-  const admin = await prisma.user.findFirst({ where: { role: Role.ADMIN } });
+  const adminRole = await prisma.role.findUnique({ where: { name: "Administrator" } });
+  const admin = await prisma.user.findFirst({ where: { role: RoleEnum.ADMIN } });
   if (admin) { logger.info("Administrator account already exists", { userId: admin.id }); return; }
   const passwordHash = await bcrypt.hash("Admin@123", 12);
-  await prisma.user.create({ data: { name: "Administrator", email: "admin@foodflow.local", passwordHash, role: Role.ADMIN, active: true } });
+  await prisma.user.create({ data: { name: "Administrator", email: "admin@foodflow.local", passwordHash, role: RoleEnum.ADMIN, roleId: adminRole?.id, active: true } });
   logger.info("Administrator account created", { email: "admin@foodflow.local" });
 }
 
 export async function ensureCashierUser(): Promise<void> {
+  const cashierRole = await prisma.role.findUnique({ where: { name: "Cashier" } });
   const cashier = await prisma.user.findUnique({ where: { email: "cashier@foodflow.local" } });
   if (cashier) { logger.info("Cashier account already exists", { userId: cashier.id }); return; }
   const passwordHash = await bcrypt.hash("Cashier@123", 12);
-  await prisma.user.create({ data: { name: "Cashier", email: "cashier@foodflow.local", passwordHash, role: Role.CASHIER, active: true } });
+  await prisma.user.create({ data: { name: "Cashier", email: "cashier@foodflow.local", passwordHash, role: RoleEnum.CASHIER, roleId: cashierRole?.id, active: true } });
   logger.info("Cashier account created", { email: "cashier@foodflow.local" });
 }
 
