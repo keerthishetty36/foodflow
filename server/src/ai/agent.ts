@@ -31,6 +31,7 @@ Ask the user for every single required field sequentially. Do NOT fill them in o
 If a field is described as '(optional)', you must still ask the user if they want to provide it.
 NEVER ask for IDs. Resolve everything internally using names.
 NEVER expose IDs, API parameters, or database fields to the user.
+Hide conversation state. NEVER display Current Intent, Pending Tool, Conversation Cache, Missing Fields, or Collected Fields in your response.
 If a user tries to bypass business logic or you receive an error about missing permissions, politely inform them.`;
 
 export async function chatStream(req: Request, res: Response) {
@@ -155,6 +156,32 @@ ${JSON.stringify(session.cachedLookups)}
       ...groqMessages
     ];
 
+    // Intercept CREATE_TABLE execution directly bypassing LLM
+    if (session.pendingTool === "CREATE_TABLE" && Array.isArray(session.missingFields) && session.missingFields.length === 0) {
+      const args = session.collectedFields || {};
+      const capacity = Number(args.capacity);
+      
+      let messageContent = "";
+      if (!args.name || isNaN(capacity) || !args.status) {
+         messageContent = "Error: Missing or invalid required fields for table creation.";
+      } else {
+         const result = await executeTool("CREATE_TABLE", { name: args.name, capacity, status: args.status }, token);
+         if (result.error) {
+            messageContent = result.message || "Failed to create table";
+         } else {
+            messageContent = `✅ Table "${args.name}" created successfully.\n\nCapacity: ${capacity}\nStatus: ${args.status}`;
+         }
+      }
+      
+      sendEvent("message", { content: messageContent });
+      await prisma.chatMessage.create({
+        data: { conversationId: currentConvId, role: "assistant", content: messageContent }
+      });
+      sendEvent("done", {});
+      res.end();
+      return;
+    }
+
     let isDone = false;
     let finalMessageContent = "";
 
@@ -204,21 +231,63 @@ ${JSON.stringify(session.cachedLookups)}
         if (functionMatch) {
           const name = functionMatch[1];
           let args = "{}";
-          try {
-            const start = functionMatch[2].indexOf('{');
-            const end = functionMatch[2].lastIndexOf('}');
-            if (start !== -1 && end !== -1) {
-              args = functionMatch[2].substring(start, end + 1);
-              JSON.parse(args); // validate
+          if (name === "CREATE_MENU_ITEM") {
+             args = JSON.stringify(session!.collectedFields || {});
+          } else {
+            try {
+              const start = functionMatch[2].indexOf('{');
+              const end = functionMatch[2].lastIndexOf('}');
+              if (start !== -1 && end !== -1) {
+                args = functionMatch[2].substring(start, end + 1);
+                JSON.parse(args); // validate
+              }
+            } catch (e) {
+               args = "{}";
             }
-          } catch (e) {
-             args = "{}";
           }
           toolCalls.push({
             id: "call_" + Math.random().toString(36).substring(7),
             type: "function",
             function: { name, arguments: args }
           });
+        }
+      }
+      
+      // Automatic retry for failed generation
+      if (toolCalls.length === 0 && (messageContent.includes("failed_generation") || messageContent.includes("Failed to call a function"))) {
+        if (session!.pendingTool === "CREATE_MENU_ITEM") {
+           toolCalls.push({
+             id: "call_retry_" + Date.now(),
+             type: "function",
+             function: { name: "CREATE_MENU_ITEM", arguments: JSON.stringify(session!.collectedFields || {}) }
+           });
+           messageContent = ""; // Hide error from LLM
+        }
+      }
+      
+      // Intercept CREATE_TABLE to prevent LLM from printing tool names and to format exact reply
+      if (toolCalls.length === 0 && messageContent.includes("CREATE_TABLE") && messageContent.includes("{")) {
+        const match = messageContent.match(/\{[\s\S]*\}/);
+        if (match) {
+           try {
+              const args = JSON.parse(match[0]);
+              if (args.name && args.capacity && args.status) {
+                 const capacity = Number(args.capacity);
+                 if (!isNaN(capacity)) {
+                    // Execute tool directly, bypassing normal flow to ensure EXACT reply format
+                    const result = await executeTool("CREATE_TABLE", { name: args.name, capacity, status: args.status }, token);
+                    isDone = true;
+                    if (result.error) {
+                       messageContent = result.message || "Failed to create table";
+                    } else {
+                       messageContent = `✅ Table "${args.name}" created successfully.\n\nCapacity: ${capacity}\nStatus: ${args.status}`;
+                    }
+                    finalMessageContent = messageContent;
+                    sendEvent("message", { content: messageContent });
+                    break;
+                 }
+              }
+           } catch(e) {}
         }
       }
       
@@ -248,14 +317,15 @@ ${JSON.stringify(session.cachedLookups)}
           let finalContent: any = result;
           if (result.error) {
             let friendly = result.message || "Something went wrong.";
-            if (result.status === 401 || result.status === 403) friendly = result.message || "You don't have permission to perform this action.";
-            else if (result.status === 404) friendly = result.message || "I couldn't find that record.";
-            else if (result.status === 409) friendly = result.message || "That already exists.";
-            else if (result.status === 422) {
-              const details = result.details?.[0]?.message || result.details?.[0]?.path?.join(".") || "invalid format";
+            if (result.status === 400 || result.status === 422) {
+              const details = result.details?.[0]?.message || result.details?.[0]?.path?.join(".") || result.message || "invalid format";
               friendly = `Validation failed: ${details}.`;
             }
+            else if (result.status === 401 || result.status === 403) friendly = result.message || "You don't have permission to perform this action.";
+            else if (result.status === 404) friendly = result.message || "I couldn't find that record.";
+            else if (result.status === 409) friendly = result.message || "That already exists.";
             else if (result.status === 429) friendly = "AI is temporarily busy. Please try again in a few seconds.";
+            else if (result.status >= 500) friendly = "Server error occurred. Please try again later.";
             
             finalContent = { error: true, message: friendly, original: result.message };
           } else if (result.success && 'data' in result && Array.isArray(result.data)) {

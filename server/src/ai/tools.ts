@@ -55,10 +55,10 @@ export const toolDefinitions: any[] = [
   { type: "function", function: { name: "DELETE_CATEGORY", description: "Delete a category", parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } } },
 
   // Menu Items
-  { type: "function", function: { name: "CREATE_MENU", description: "Create a menu item", parameters: { type: "object", properties: { name: { type: "string" }, price: { type: "number" }, costPrice: { type: "number" }, categoryName: { type: "string" }, vegType: { type: "string", enum: ["VEG", "NON_VEG", "EGG"] }, preparationTime: { type: "number", description: "Preparation time in minutes" }, available: { type: "boolean", description: "Whether it is available (Yes/No)" }, description: { type: "string", description: "Description (optional)" } }, required: ["name", "categoryName", "price", "costPrice", "vegType", "preparationTime", "description", "available"] } } },
-  { type: "function", function: { name: "GET_MENU", description: "List menu items", parameters: { type: "object", properties: {}, required: [] } } },
-  { type: "function", function: { name: "UPDATE_MENU", description: "Update a menu item", parameters: { type: "object", properties: { name: { type: "string" }, newName: { type: "string" }, price: { type: "number" }, costPrice: { type: "number" }, available: { type: "boolean" } }, required: ["name"] } } },
-  { type: "function", function: { name: "DELETE_MENU", description: "Delete a menu item", parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } } },
+  { type: "function", function: { name: "CREATE_MENU_ITEM", description: "Create a menu item", parameters: { type: "object", properties: { name: { type: "string" }, price: { type: "string", description: "Selling price as a number string (e.g. '60')" }, costPrice: { type: "string", description: "Cost price as a number string (e.g. '35')" }, categoryName: { type: "string" }, vegType: { type: "string", description: "Vegetarian type (VEG, NON_VEG, EGG)" } }, required: ["name", "categoryName", "price", "costPrice"] } } },
+  { type: "function", function: { name: "GET_MENU_ITEMS", description: "List menu items", parameters: { type: "object", properties: {}, required: [] } } },
+  { type: "function", function: { name: "UPDATE_MENU_ITEM", description: "Update a menu item", parameters: { type: "object", properties: { name: { type: "string" }, newName: { type: "string" }, price: { type: "string" }, costPrice: { type: "string" }, categoryName: { type: "string" } }, required: ["name"] } } },
+  { type: "function", function: { name: "DELETE_MENU_ITEM", description: "Delete a menu item", parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } } },
 
   // Users
   { type: "function", function: { name: "CREATE_USER", description: "Create a user", parameters: { type: "object", properties: { name: { type: "string" }, email: { type: "string" }, password: { type: "string" }, role: { type: "string", description: "The role name (e.g., Kitchen Staff, Admin)" } }, required: ["name", "email", "password", "role"] } } },
@@ -134,21 +134,34 @@ export async function executeTool(name: string, args: any, token: string) {
       return internalFetch(`/categories/${idRes.id}`, "DELETE", token);
     }
 
-    case "GET_MENU": return internalFetch("/menu-items", "GET", token);
-    case "CREATE_MENU": {
-      const catRes: any = await resolveId("/categories", "name", args.categoryName, token);
-      if (catRes.error) return catRes;
-      const newArgs = { ...args, categoryId: catRes.id };
-      delete newArgs.categoryName;
-      return internalFetch("/menu-items", "POST", token, newArgs);
-    }
-    case "UPDATE_MENU": {
+    case "GET_MENU_ITEMS": return internalFetch("/menu-items", "GET", token);
+
+    case "UPDATE_MENU_ITEM": {
       const idRes: any = await resolveId("/menu-items", "name", args.name, token);
       if (idRes.error) return idRes;
-      const { name, newName, ...rest } = args;
-      return internalFetch(`/menu-items/${idRes.id}`, "PATCH", token, { ...rest, name: newName || name });
+      
+      const payload: any = {};
+      if (args.newName) payload.name = args.newName;
+      
+      if (args.price !== undefined) {
+        payload.price = Number(args.price);
+        if (isNaN(payload.price)) return { error: true, status: 400, message: "What is the selling price?" };
+      }
+      
+      if (args.costPrice !== undefined) {
+        payload.costPrice = Number(args.costPrice);
+        if (isNaN(payload.costPrice)) return { error: true, status: 400, message: "What is the cost price?" };
+      }
+      
+      if (args.categoryName) {
+        const catRes: any = await resolveId("/categories", "name", args.categoryName, token);
+        if (catRes.error) return catRes;
+        payload.categoryId = catRes.id;
+      }
+      
+      return internalFetch(`/menu-items/${idRes.id}`, "PATCH", token, payload);
     }
-    case "DELETE_MENU": {
+    case "DELETE_MENU_ITEM": {
       const idRes: any = await resolveId("/menu-items", "name", args.name, token);
       if (idRes.error) return idRes;
       return internalFetch(`/menu-items/${idRes.id}`, "DELETE", token);
@@ -159,40 +172,34 @@ export async function executeTool(name: string, args: any, token: string) {
       const newArgs = { ...args };
       try {
         if (newArgs.role) {
-          const standardRoles = ["ADMIN", "MANAGER", "CASHIER", "KITCHEN", "WAITER"];
-          const uppercaseRole = String(newArgs.role).toUpperCase();
-
-          if (standardRoles.includes(uppercaseRole)) {
-            newArgs.role = uppercaseRole;
-          } else {
-            const roleRes: any = await internalFetch("/roles", "GET", token);
-            if (roleRes.error) return roleRes;
-            
-            const matches = (roleRes.data || []).filter((r: any) => {
-              if (!r.name) return false;
-              return r.name.toLowerCase().includes(String(newArgs.role).toLowerCase()) || 
-                     r.displayName?.toLowerCase().includes(String(newArgs.role).toLowerCase());
-            });
-            
-            if (matches.length === 0) {
-              return { error: true, status: 404, message: `I couldn't find a role named '${newArgs.role}'.` };
-            }
-            if (matches.length > 1) {
-              const exactMatch = matches.find((r: any) => 
-                r.name.toLowerCase() === String(newArgs.role).toLowerCase() || 
-                r.displayName?.toLowerCase() === String(newArgs.role).toLowerCase()
-              );
-              if (exactMatch) {
-                newArgs.roleId = exactMatch.id;
-              } else {
-                return { error: true, status: 400, message: `Multiple roles match "${newArgs.role}": ${matches.map((r:any) => r.name).join(", ")}. Please specify which one you mean.` };
-              }
-            } else {
-              newArgs.roleId = matches[0].id;
-            }
-            delete newArgs.role; // don't send both baseRole and roleId
+          const roleRes: any = await internalFetch("/roles", "GET", token);
+          if (roleRes.error) return roleRes;
+          
+          const matches = (roleRes.data || []).filter((r: any) => {
+            if (!r.name) return false;
+            return r.name.toLowerCase().includes(String(newArgs.role).toLowerCase()) || 
+                   r.displayName?.toLowerCase().includes(String(newArgs.role).toLowerCase());
+          });
+          
+          if (matches.length === 0) {
+            return { error: true, status: 404, message: `The role '${newArgs.role}' doesn't exist. Would you like me to create it first?` };
           }
+          if (matches.length > 1) {
+            const exactMatch = matches.find((r: any) => 
+              r.name.toLowerCase() === String(newArgs.role).toLowerCase() || 
+              r.displayName?.toLowerCase() === String(newArgs.role).toLowerCase()
+            );
+            if (exactMatch) {
+              newArgs.roleId = exactMatch.id;
+            } else {
+              return { error: true, status: 400, message: `Multiple roles match "${newArgs.role}": ${matches.map((r:any) => r.name).join(", ")}. Please specify which one you mean.` };
+            }
+          } else {
+            newArgs.roleId = matches[0].id;
+          }
+          delete newArgs.role; // don't send both baseRole and roleId
         }
+
         return await internalFetch("/users", "POST", token, newArgs);
       } catch (e: any) {
         logger.error("Error creating user", { toolName: "CREATE_USER", payload: args, error: e.message, stack: e.stack });
@@ -213,7 +220,7 @@ export async function executeTool(name: string, args: any, token: string) {
         );
         
         if (matches.length === 0) {
-          return { error: true, status: 404, message: "I couldn't find that role. Would you like me to create it first?" };
+          return { error: true, status: 404, message: `The role '${newArgs.role}' doesn't exist. Would you like me to create it first?` };
         }
         if (matches.length > 1) {
           const exactMatch = matches.find((r: any) => r.name.toLowerCase() === newArgs.role.toLowerCase() || r.displayName?.toLowerCase() === newArgs.role.toLowerCase());
@@ -302,15 +309,58 @@ export async function executeTool(name: string, args: any, token: string) {
       return internalFetch(`/roles/${idRes.id}`, "DELETE", token);
     }
     
-    case "CREATE_MENU": {
-      const newArgs = { ...args };
-      if (newArgs.categoryName) {
-        const catRes: any = await resolveId("/categories", "name", newArgs.categoryName, token);
-        if (catRes.error) return { error: true, status: 404, message: `Could not find a category named '${newArgs.categoryName}'.` };
-        newArgs.categoryId = catRes.id;
-        delete newArgs.categoryName;
+    case "CREATE_MENU_ITEM": {
+      // Programmatically build the payload from collected fields
+      let name = args.name || args.foodName;
+      name = typeof name === "string" ? name.trim() : name;
+      
+      const categoryName = args.categoryName || args.category;
+      let p = Number(args.price || args.sellingPrice);
+      let cp = Number(args.costPrice);
+      
+      if (isNaN(p)) return { error: true, status: 400, message: "What is the selling price?" };
+      if (isNaN(cp)) return { error: true, status: 400, message: "What is the cost price?" };
+
+      const catRes: any = await resolveId("/categories", "name", categoryName, token);
+      if (catRes.error) return { error: true, status: 400, message: `I couldn't find the category '${categoryName}'. Please choose an existing category.` };
+
+      // Validate against the exact registered tool schema
+      const schemaDef = toolDefinitions.find(t => t.function.name === "CREATE_MENU_ITEM")?.function.parameters.properties || {};
+      
+      const rawPayload: any = {
+        name,
+        categoryId: catRes.id,
+        price: p,
+        costPrice: cp
+      };
+      
+      // Auto-repair if the schema strictly requires it
+      if (schemaDef.vegType) rawPayload.vegType = "VEG";
+
+      const payload: any = {};
+      const allowedKeys = Object.keys(schemaDef).map(k => k === "categoryName" ? "categoryId" : k); // translate categoryName -> categoryId
+      
+      for (const key of allowedKeys) {
+         if (rawPayload[key] !== undefined) {
+             payload[key] = rawPayload[key];
+         }
       }
-      return internalFetch("/menu-items", "POST", token, newArgs);
+
+      if (process.env.NODE_ENV === "development") {
+        logger.debug("Final CREATE_MENU_ITEM payload", {
+          resolvedCategory: catRes,
+          collectedFields: args,
+          fullPayload: payload,
+          toolSchema: schemaDef
+        });
+      }
+      
+      const response = await internalFetch("/menu-items", "POST", token, payload);
+      
+      if (process.env.NODE_ENV === "development") {
+        logger.debug("Backend response", { response });
+      }
+      return response;
     }
 
     case "GET_SUPPLIER": return internalFetch("/suppliers", "GET", token);
