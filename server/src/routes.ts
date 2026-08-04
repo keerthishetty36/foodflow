@@ -9,8 +9,23 @@ import { asyncHandler, audit, pagination } from "./utils.js";
 import { emit } from "./realtime.js";
 import { writeReceipt } from "./receipt.js";
 import type { AuthRequest } from "./types.js";
+import { chatStream } from "./ai/agent.js";
+import {
+  getConversations,
+  getConversationHistory,
+  deleteConversation,
+  clearAllConversations
+} from "./controllers/aiChatController.js";
 
-const router = Router(); const id = z.string().min(1); const orderInput = z.object({ tableId: id.optional().nullable(), customerId: id.optional().nullable(), notes: z.string().max(1000).optional(), isHeld: z.boolean().optional(), items: z.array(z.object({ menuItemId: id, quantity: z.number().int().min(1).max(99), notes: z.string().max(500).optional() })).min(1) });
+const router = Router(); 
+
+router.post("/ai/chat", authenticate, chatStream);
+router.get("/ai/conversations", authenticate, getConversations);
+router.get("/ai/conversations/:id", authenticate, getConversationHistory);
+router.delete("/ai/conversations/:id", authenticate, deleteConversation);
+router.delete("/ai/conversations", authenticate, clearAllConversations);
+
+const id = z.string().min(1); const orderInput = z.object({ tableId: id.optional().nullable(), customerId: id.optional().nullable(), notes: z.string().max(1000).optional(), isHeld: z.boolean().optional(), items: z.array(z.object({ menuItemId: id, quantity: z.number().int().min(1).max(99), notes: z.string().max(500).optional() })).min(1) });
 router.post("/auth/login", asyncHandler(async (req, res) => {
   const configurationError = authConfigurationError();
   if (configurationError) return res.status(503).json({ message: configurationError });

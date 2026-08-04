@@ -66,6 +66,7 @@ model User {
  updatedAt DateTime @updatedAt
  orders Order[]
  auditLogs AuditLog[]
+ conversations Conversation[]
 }
 
 model Category {
@@ -257,4 +258,23 @@ model Setting {
  receiptFooter String?
  taxRate Float @default(0)
  updatedAt DateTime @updatedAt
+}
+
+model Conversation {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  userId String @db.ObjectId
+  user User @relation(fields:[userId], references:[id])
+  title String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages ChatMessage[]
+}
+
+model ChatMessage {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId String @db.ObjectId
+  conversation Conversation @relation(fields:[conversationId], references:[id], onDelete: Cascade)
+  role String
+  content String
+  createdAt DateTime @default(now())
 }

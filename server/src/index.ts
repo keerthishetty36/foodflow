@@ -23,7 +23,14 @@ setIo(io);
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(compression());
 app.use(cors({ origin: (origin, callback) => callback(null, isAllowedOrigin(origin)), credentials: true }));
-app.use(rateLimit({ windowMs: 15 * 60e3, max: 500 }));
+app.use(rateLimit({ 
+  windowMs: 15 * 60e3, 
+  max: 500,
+  handler: (req, res, next, options) => {
+    logger.warn("429 Rate Limit Exceeded", { source: "Backend rate limiter", ip: req.ip, path: req.path });
+    res.status(options.statusCode).send(options.message);
+  }
+}));
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 const utapi = new UTApi({ token: env.UPLOADTHING_TOKEN });

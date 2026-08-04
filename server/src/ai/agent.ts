@@ -2,34 +2,82 @@ import { Request, Response } from "express";
 import { getGroqClient, MODEL } from "./groqClient.js";
 import { toolDefinitions, executeTool } from "./tools.js";
 import { logger } from "../lib.js";
+import { prisma } from "../lib.js";
 
-const SYSTEM_PROMPT = `You are the FoodFlow POS AI Assistant.
-Your goal is to help restaurant managers, cashiers, and kitchen staff manage the restaurant.
-You have access to tools that can fetch data and perform operations (like creating users, menu items, or orders).
+// Keep session state by conversationId instead of token
+const sessions = new Map<string, {
+  intent?: string;
+  collectedFields: Record<string, any>;
+  cachedLookups: Record<string, any>;
+  confirmationState?: string;
+  pendingTool?: string;
+  missingFields?: string[];
+  currentStep?: string;
+}>();
 
-IMPORTANT RULES:
-1. ALWAYS use the provided tools to interact with the POS system. DO NOT make up data.
-2. If a user asks to perform an action (e.g., "Create a user"), but you don't have all the required information, ASK them conversationally for the missing fields before calling the tool. Do not ask for everything at once if it feels robotic.
-3. If a tool fails, explain the error nicely to the user.
-4. Format reports nicely using Markdown. Use tables for lists of items (e.g., inventory, users).
-5. Never expose API keys, database details, or raw stack traces.
-6. Before deleting ANYTHING, you must ask the user for explicit confirmation (e.g., "Are you sure you want to delete this menu item?").
+const SYSTEM_PROMPT = `You are the FoodFlow POS AI Assistant, acting as a Senior Conversation Manager.
 
-You are running inside a secure backend. The tools you call will execute with the permissions of the currently logged-in user. If a tool returns a permission error, inform the user they don't have access.
-`;
+IMPORTANT: NEVER execute CRUD operations immediately.
+You must strictly follow this conversational workflow:
+1. Detect Intent: When the user wants to perform an action (e.g., "Create a table"), identify the required tool (e.g., CREATE_TABLE).
+2. Determine Required Fields: Check the tool's required parameters.
+3. Ask ONLY Missing Fields: DO NOT call the tool. Instead, ask the user for the missing fields ONE BY ONE sequentially. Do not ask for multiple things at once.
+4. Remember Previous Answers & Entities: The system tracks your conversation state. If the user uses pronouns (e.g., "it", "them", "this one"), resolve them using the most recently discussed entity in the conversational context.
+5. Execute: ONLY after all required fields are collected from the user, you may call the existing backend tool.
+6. Confirmation: For DELETE operations, always ask "Are you sure?" before executing the tool.
+
+NEVER guess or generate default values for required fields. NEVER auto-fill placeholders like 'price=0' or 'active=true' or 'description=...'.
+Ask the user for every single required field sequentially. Do NOT fill them in on your own.
+If a field is described as '(optional)', you must still ask the user if they want to provide it.
+NEVER ask for IDs. Resolve everything internally using names.
+NEVER expose IDs, API parameters, or database fields to the user.
+If a user tries to bypass business logic or you receive an error about missing permissions, politely inform them.`;
 
 export async function chatStream(req: Request, res: Response) {
-  const { messages } = req.body;
-  const token = req.cookies.accessToken;
+  const { conversationId, message } = req.body;
+  const token = req.cookies.accessToken || req.headers.authorization?.replace(/^Bearer\s+/i, "");
+  const userId = (req as any).user?.sub || (req as any).user?.id;
 
-  if (!token) {
-    return res.status(401).json({ message: "Authentication required" });
+  if (!token || !userId) {
+    return res.status(401).json({ message: "Your session has expired. Please login again." });
   }
 
   if (!process.env.GROQ_API_KEY) {
     logger.error("GROQ_API_KEY missing");
     return res.status(500).json({ success: false, error: "GROQ_API_KEY missing" });
   }
+
+  let currentConvId = conversationId;
+  let title = message.slice(0, 30);
+  
+  if (!currentConvId) {
+    const conv = await prisma.conversation.create({
+      data: {
+        userId,
+        title: title || "New Chat"
+      }
+    });
+    currentConvId = conv.id;
+  }
+
+  logger.info("Incoming request", { message, conversationId: currentConvId });
+
+  // Save the new user message
+  await prisma.chatMessage.create({
+    data: {
+      conversationId: currentConvId,
+      role: "user",
+      content: message
+    }
+  });
+
+  let session = sessions.get(currentConvId);
+  if (!session) {
+    session = { collectedFields: {}, cachedLookups: {}, missingFields: [], currentStep: "IDLE" };
+    sessions.set(currentConvId, session);
+  }
+
+  logger.info("Conversation state", { session });
 
   let groq;
   try {
@@ -64,7 +112,6 @@ export async function chatStream(req: Request, res: Response) {
     });
   }
 
-  // Setup SSE
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -72,24 +119,47 @@ export async function chatStream(req: Request, res: Response) {
   const sendEvent = (event: string, data: any) => {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
+  
+  // Send the conversationId so frontend knows which one it is
+  sendEvent("conversation_id", { conversationId: currentConvId });
 
   try {
-    const groqMessages = messages.map((message: any) => ({
-      role: message.role,
-      content: message.content
-    }));
+    const history = await prisma.chatMessage.findMany({
+      where: { conversationId: currentConvId },
+      orderBy: { createdAt: "asc" }
+    });
 
-    const chatMessages = [
-      { role: "system", content: SYSTEM_PROMPT },
+    const groqMessages = history
+      .filter(m => m.role !== "tool") // tools aren't stored in DB in this simple model or we filter them
+      .slice(-8)
+      .map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+
+    const dynamicSystemPrompt = `${SYSTEM_PROMPT}
+
+[CONVERSATION MANAGER STATE]
+Current Intent (Pending Tool): ${session.pendingTool || 'None'}
+Current Step: ${session.currentStep || 'IDLE'}
+Collected Fields: ${JSON.stringify(session.collectedFields)}
+Missing Fields: ${JSON.stringify(session.missingFields || [])}
+
+[CONVERSATION CACHE]
+Use these cached lookups instead of calling the tool again:
+${JSON.stringify(session.cachedLookups)}
+`;
+
+    const chatMessages: any[] = [
+      { role: "system", content: dynamicSystemPrompt },
       ...groqMessages
     ];
 
     let isDone = false;
+    let finalMessageContent = "";
 
     while (!isDone) {
-      console.log("GROQ_API_KEY loaded:", !!process.env.GROQ_API_KEY);
-      console.log("Model:", MODEL);
-      console.log("Messages:", chatMessages);
+      logger.info("Groq request", { model: MODEL, messageCount: chatMessages.length });
 
       const stream = await groq.chat.completions.create({
         model: MODEL,
@@ -107,6 +177,7 @@ export async function chatStream(req: Request, res: Response) {
         
         if (delta?.content) {
           messageContent += delta.content;
+          finalMessageContent += delta.content;
           sendEvent("message", { content: delta.content });
         }
 
@@ -127,7 +198,31 @@ export async function chatStream(req: Request, res: Response) {
         }
       }
       
-      logger.info("Response received");
+      // Fallback for when the model outputs text like: <function=CREATE_ROLE>\n{ "name": "cleaner" }
+      if (toolCalls.length === 0 && messageContent.includes("<function=")) {
+        const functionMatch = messageContent.match(/<function=([A-Z_]+)>([\s\S]*)/);
+        if (functionMatch) {
+          const name = functionMatch[1];
+          let args = "{}";
+          try {
+            const start = functionMatch[2].indexOf('{');
+            const end = functionMatch[2].lastIndexOf('}');
+            if (start !== -1 && end !== -1) {
+              args = functionMatch[2].substring(start, end + 1);
+              JSON.parse(args); // validate
+            }
+          } catch (e) {
+             args = "{}";
+          }
+          toolCalls.push({
+            id: "call_" + Math.random().toString(36).substring(7),
+            type: "function",
+            function: { name, arguments: args }
+          });
+        }
+      }
+      
+      logger.info("Groq response", { messageContent, toolCalls });
 
       chatMessages.push({
         role: "assistant",
@@ -142,41 +237,93 @@ export async function chatStream(req: Request, res: Response) {
           const name = toolCall.function.name;
           const args = JSON.parse(toolCall.function.arguments || "{}");
           
-          logger.info(`AI executing tool: ${name}`);
+          logger.info(`Before executeTool()`, { intent: name, tool: name, payload: args });
+          logger.info("Selected intent", { intent: name });
+          logger.info("Tool selection", { name });
+          logger.info("Tool payload", { args });
           const result = await executeTool(name, args, token);
+          logger.info(`After executeTool()`, { intent: name, tool: name, result, errors: result.error ? result : undefined });
+          logger.info("Backend API response", { result });
+          // PART 1 & 6: Don't resend giant lists, cache them instead
+          let finalContent: any = result;
+          if (result.error) {
+            let friendly = result.message || "Something went wrong.";
+            if (result.status === 401 || result.status === 403) friendly = result.message || "You don't have permission to perform this action.";
+            else if (result.status === 404) friendly = result.message || "I couldn't find that record.";
+            else if (result.status === 409) friendly = result.message || "That already exists.";
+            else if (result.status === 422) {
+              const details = result.details?.[0]?.message || result.details?.[0]?.path?.join(".") || "invalid format";
+              friendly = `Validation failed: ${details}.`;
+            }
+            else if (result.status === 429) friendly = "AI is temporarily busy. Please try again in a few seconds.";
+            
+            finalContent = { error: true, message: friendly, original: result.message };
+          } else if (result.success && 'data' in result && Array.isArray(result.data)) {
+            session!.cachedLookups[name] = result.data;
+            finalContent = { success: true, message: `${result.data.length} items cached in memory. See [CONVERSATION CACHE].` };
+          }
           
           chatMessages.push({
             role: "tool",
             tool_call_id: toolCall.id,
             name: name,
-            content: JSON.stringify(result)
+            content: JSON.stringify(finalContent)
           });
         }
         
         sendEvent("tool_end", {});
-        // Loop will continue and send the tool result back to Groq
       } else {
         isDone = true;
       }
     }
 
+    // Save final AI response to DB
+    if (finalMessageContent) {
+       logger.info("Final response", { finalMessageContent });
+       await prisma.chatMessage.create({
+         data: {
+           conversationId: currentConvId,
+           role: "assistant",
+           content: finalMessageContent
+         }
+       });
+    }
+
     sendEvent("done", {});
     res.end();
   } catch (error: any) {
-    console.error("error.message:", error.message);
-    console.error("error.status:", error.status);
-    console.error("error.code:", error.code);
-    console.error("error.type:", error.type);
-    console.error("error.response:", error.response);
-    console.error("error.stack:", error.stack);
-
-    // Send actual error safely back to frontend instead of generic string
-    sendEvent("error", { 
-      message: error.message,
-      status: error.status,
-      code: error.code,
-      type: error.type 
+    logger.error("Chat Stream Exception", { 
+      toolName: error.toolName || "Unknown", 
+      payload: error.payload || {},
+      url: error.url || "N/A", 
+      status: error.status || 500,
+      body: error.response?.data || error.body || null, 
+      error: error.message, 
+      stack: error.stack 
     });
-    res.end();
+
+    let friendlyMessage = error.message || String(error) || "An unexpected error occurred. Please try again.";
+    if (error.status === 401 || error.status === 403) friendlyMessage = "Invalid GROQ_API_KEY.";
+    else if (error.status === 404) friendlyMessage = "The requested resource was not found.";
+    else if (error.status === 409) friendlyMessage = "There was a conflict with your request (e.g., duplicate data).";
+    else if (error.status === 422) friendlyMessage = "The provided data was invalid. Please check your inputs.";
+    else if (error.status === 429) {
+      logger.warn("429 Rate Limit Exceeded", { source: "Groq API", error: error.message });
+      friendlyMessage = "Groq API rate limit exceeded. Please wait a few minutes.";
+    }
+
+    const errPayload = {
+      success: false,
+      stage: error.stage || "groq_request",
+      message: friendlyMessage,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined
+    };
+
+    if (!res.headersSent) {
+      return res.status(error.status || 500).json(errPayload);
+    } else {
+      sendEvent("error", errPayload);
+      res.end();
+    }
   }
 }
