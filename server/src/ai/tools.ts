@@ -107,7 +107,6 @@ export async function executeTool(name: string, args: any, token: string) {
     case "GET_SALES_REPORT": return internalFetch(`/reports/sales${args.from ? `?from=${args.from}` : ""}`, "GET", token);
 
     case "GET_TABLE": return internalFetch("/tables", "GET", token);
-    case "CREATE_TABLE": return internalFetch("/tables", "POST", token, args);
     case "UPDATE_TABLE": {
       const idRes: any = await resolveId("/tables", "name", args.name, token);
       if (idRes.error) return idRes;
@@ -255,7 +254,7 @@ export async function executeTool(name: string, args: any, token: string) {
       }
       capacity = Number(capacity);
       if (isNaN(capacity)) {
-        return { error: true, status: 400, message: "What should the seating capacity be?" };
+        return { error: true, status: 400, message: "Please enter a valid numeric capacity." };
       }
 
       status = String(status).toUpperCase();

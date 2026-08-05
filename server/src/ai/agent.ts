@@ -162,8 +162,10 @@ ${JSON.stringify(session.cachedLookups)}
       const capacity = Number(args.capacity);
       
       let messageContent = "";
-      if (!args.name || isNaN(capacity) || !args.status) {
-         messageContent = "Error: Missing or invalid required fields for table creation.";
+      if (isNaN(capacity)) {
+         messageContent = "Please enter a valid numeric capacity.";
+      } else if (!args.name || !args.status) {
+         messageContent = "Error: Missing required fields: name, status";
       } else {
          const result = await executeTool("CREATE_TABLE", { name: args.name, capacity, status: args.status }, token);
          if (result.error) {
@@ -205,7 +207,6 @@ ${JSON.stringify(session.cachedLookups)}
         if (delta?.content) {
           messageContent += delta.content;
           finalMessageContent += delta.content;
-          sendEvent("message", { content: delta.content });
         }
 
         if (delta?.tool_calls) {
@@ -283,7 +284,6 @@ ${JSON.stringify(session.cachedLookups)}
                        messageContent = `✅ Table "${args.name}" created successfully.\n\nCapacity: ${capacity}\nStatus: ${args.status}`;
                     }
                     finalMessageContent = messageContent;
-                    sendEvent("message", { content: messageContent });
                     break;
                  }
               }
@@ -292,6 +292,14 @@ ${JSON.stringify(session.cachedLookups)}
       }
       
       logger.info("Groq response", { messageContent, toolCalls });
+      
+      // If we got a final message content without tool calls, format and send it
+      if (toolCalls.length === 0 && messageContent) {
+          const formatted = formatResponse(messageContent);
+          if (formatted) {
+              sendEvent("message", { content: formatted });
+          }
+      }
 
       chatMessages.push({
         role: "assistant",
@@ -396,4 +404,36 @@ ${JSON.stringify(session.cachedLookups)}
       res.end();
     }
   }
+}
+
+function formatResponse(text: string): string {
+  // Strip out multiline or inline JSON objects entirely
+  let cleaned = text.replace(/\{[\s\S]*?\}/g, '');
+  
+  const lines = cleaned.split('\n');
+  const filtered = lines.filter(line => {
+    const l = line.trim();
+    if (!l) return true; // keep blank lines for spacing, will trim at end
+    if (l.startsWith('[CONVERSATION')) return false;
+    if (l.startsWith('[CACHE')) return false;
+    if (l.startsWith('[STATE')) return false;
+    if (l.startsWith('[DEBUG')) return false;
+    if (l.startsWith('Current Intent')) return false;
+    if (l.startsWith('Current Step')) return false;
+    if (l.startsWith('Collected Fields')) return false;
+    if (l.startsWith('Missing Fields')) return false;
+    if (l.startsWith('(function=')) return false;
+    if (l.startsWith('<function')) return false;
+    if (l.startsWith('</function>')) return false;
+    if (l.includes('CREATE_')) return false;
+    if (l.includes('UPDATE_')) return false;
+    if (l.includes('DELETE_')) return false;
+    if (l.includes('GET_')) return false;
+    if (l.includes('Tool Call')) return false;
+    if (l.includes('Tool Payload')) return false;
+    if (l.includes('Internal JSON')) return false;
+    if (l.includes('Developer Log')) return false;
+    return true;
+  });
+  return filtered.join('\n').trim();
 }
