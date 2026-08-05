@@ -612,10 +612,15 @@ async function handleTableConversation(message: string, session: any, token: str
       session.collectedFields.status = status;
 
       const result = await executeTool("CREATE_TABLE", session.collectedFields, token);
+      if (result.error) {
+        resetTableConversation(session);
+        return formatFriendlyError(result);
+      }
+      const createdName = session.collectedFields.name;
+      const createdCapacity = session.collectedFields.capacity;
       resetTableConversation(session);
-      if (result.error) return formatFriendlyError(result);
       await executeTool("LIST_TABLES", {}, token);
-      return `✅ Table "${session.collectedFields.name}" created successfully.\n\nCapacity: ${session.collectedFields.capacity}\nStatus: ${status}`;
+      return `✅ Table "${createdName}" created successfully.\n\nCapacity: ${createdCapacity}\nStatus: ${status}`;
     }
   }
 
@@ -1307,92 +1312,198 @@ async function handleUserConversation(message: string, session: any, token: stri
 /** Keeps CREATE_ORDER independent from model memory and unregistered tool names. */
 async function handleOrderConversation(message: string, session: any, token: string): Promise<string | null> {
   const startsOrder = /\b(create|start|new|place)\b.*\border\b|\border\b.*\b(create|start|new|place)\b/i.test(message);
-  if (session.pendingTool !== "CREATE_ORDER" && !startsOrder) return null;
+  const normalizedMsg = String(message ?? "").trim();
+  const startsCreate = /\b(create|start|new|place)\b.*\border\b/i.test(normalizedMsg) || /\border\b.*\b(create|start|new|place)\b/i.test(normalizedMsg);
+  const startsUpdate = /\b(update|edit|modify)\b.*\border\b/i.test(normalizedMsg);
+  const startsDelete = /\b(delete|remove)\b.*\border\b/i.test(normalizedMsg);
 
-  if (session.pendingTool !== "CREATE_ORDER") {
-    session.pendingTool = "CREATE_ORDER";
-    session.currentStep = "ORDER_TABLE";
-    session.collectedFields = { items: [] };
-    return "Which table would you like to create the order for?";
+  if (normalizedMsg.toLowerCase() === "cancel") {
+    resetOrderConversation(session);
+    return "Operation cancelled.";
   }
 
-  if (session.currentStep === "ORDER_TABLE") {
-    const tableName = String(message ?? "").trim();
-    if (!tableName) return "Which table would you like to create the order for?";
-    const tableLookup = ["GET_TABLE", "GET_TABLES", "LIST_TABLES"].find(name => registeredToolNames.has(name));
-    if (tableLookup) {
+  // Init flow
+  if (!session.pendingTool) {
+    if (startsCreate) {
+      session.pendingTool = "CREATE_ORDER";
+      session.currentStep = "ORDER_TABLE";
+      session.collectedFields = { items: [] };
+      return "Which table would you like to create the order for?";
+    } else if (startsUpdate) {
+      session.pendingTool = "UPDATE_ORDER";
+      session.currentStep = "ORDER_UPDATE_SELECT";
+      session.collectedFields = {};
+      return "Which order number would you like to update?";
+    } else if (startsDelete) {
+      session.pendingTool = "DELETE_ORDER";
+      session.currentStep = "ORDER_DELETE_SELECT";
+      session.collectedFields = {};
+      return "Which order number would you like to delete?";
+    }
+    return null;
+  }
+
+  // Flow execution
+  if (session.pendingTool === "CREATE_ORDER") {
+    if (session.currentStep === "ORDER_TABLE") {
+      const tableName = normalizedMsg;
+      if (!tableName) return "Which table would you like to create the order for?";
+      
+      const tableLookup = ["GET_TABLE", "GET_TABLES", "LIST_TABLES"].find(name => registeredToolNames.has(name)) || "LIST_TABLES";
       const tableResult: any = await executeTool(tableLookup, {}, token);
       if (tableResult.error) return tableResult.message || "Unable to look up tables.";
-      const table = (Array.isArray(tableResult.data) ? tableResult.data : []).find((entry: any) => normalizeOrderValue(entry.name) === normalizeOrderValue(tableName));
-      if (!table) return `I couldn't find table "${tableName}". Please enter a valid table.`;
-      session.collectedFields.tableName = table.name;
-    } else {
-      session.collectedFields.tableName = tableName;
-    }
-    session.currentStep = "ORDER_MENU_ITEM";
-    return "What menu item would you like to add?";
-  }
-
-  if (session.currentStep === "ORDER_MENU_CONFIRM") {
-    if (/^(yes|y)$/i.test(String(message).trim())) {
-      session.collectedFields.pendingMenuItem = session.collectedFields.suggestedMenuItem;
-      delete session.collectedFields.suggestedMenuItem;
-      session.currentStep = "ORDER_QUANTITY";
-      return `How many ${session.collectedFields.pendingMenuItem} would you like?`;
-    }
-    delete session.collectedFields.suggestedMenuItem;
-    session.currentStep = "ORDER_MENU_ITEM";
-    return "What menu item would you like to add?";
-  }
-
-  if (session.currentStep === "ORDER_MENU_ITEM") {
-    const requestedName = String(message ?? "").trim();
-    if (!requestedName) return "What menu item would you like to add?";
-    if (!registeredToolNames.has("GET_MENU_ITEMS")) {
-      session.collectedFields.pendingMenuItem = requestedName;
-      session.currentStep = "ORDER_QUANTITY";
-      return `How many ${requestedName} would you like?`;
-    }
-    const menuResult: any = await executeTool("GET_MENU_ITEMS", {}, token);
-    if (menuResult.error) return menuResult.message || "Unable to look up menu items.";
-    const menuItems = Array.isArray(menuResult.data) ? menuResult.data : [];
-    const normalizedRequestedName = normalizeOrderValue(requestedName);
-    const exactMatch = menuItems.find((entry: any) => normalizeOrderValue(entry.name) === normalizedRequestedName);
-    if (exactMatch) {
-      session.collectedFields.pendingMenuItem = exactMatch.name;
-      session.currentStep = "ORDER_QUANTITY";
-      return `How many ${exactMatch.name} would you like?`;
-    }
-    const closeMatches = menuItems.map((entry: any) => ({ entry, distance: editDistance(normalizeOrderValue(entry.name), normalizedRequestedName) }))
-      .filter(({ distance }: any) => distance <= Math.max(2, Math.floor(normalizedRequestedName.length * 0.25)))
-      .sort((left: any, right: any) => left.distance - right.distance);
-    if (closeMatches.length === 1) {
-      session.collectedFields.suggestedMenuItem = closeMatches[0].entry.name;
-      session.currentStep = "ORDER_MENU_CONFIRM";
-      return `Did you mean "${closeMatches[0].entry.name}"?`;
-    }
-    return `I couldn't find '${requestedName}'. Please enter a valid menu item.`;
-  }
-
-  if (session.currentStep === "ORDER_QUANTITY") {
-    const quantity = Number(String(message).trim());
-    if (!Number.isInteger(quantity) || quantity <= 0) return `How many ${session.collectedFields.pendingMenuItem} would you like?`;
-    session.collectedFields.items.push({ menuItemName: session.collectedFields.pendingMenuItem, quantity });
-    delete session.collectedFields.pendingMenuItem;
-    session.currentStep = "ORDER_ADD_ANOTHER";
-    return "Would you like to add another item? (Yes/No)";
-  }
-
-  if (session.currentStep === "ORDER_ADD_ANOTHER") {
-    if (/^(yes|y)$/i.test(String(message).trim())) {
+      
+      const tables = Array.isArray(tableResult.data) ? tableResult.data : [];
+      const table = tables.find((t: any) => t.name && t.name.trim().toLowerCase() === tableName.toLowerCase());
+      if (!table) {
+        return `Table "${tableName}" was not found.`;
+      }
+      
+      session.collectedFields.tableId = table.id || table._id;
       session.currentStep = "ORDER_MENU_ITEM";
       return "What menu item would you like to add?";
     }
-    if (!/^(no|n)$/i.test(String(message).trim())) return "Would you like to add another item? (Yes/No)";
-    if (!registeredToolNames.has("CREATE_ORDER")) return "Order creation is currently unavailable.";
-    const result: any = await executeTool("CREATE_ORDER", { tableName: session.collectedFields.tableName, items: session.collectedFields.items }, token);
-    resetOrderConversation(session);
-    return result.error ? (result.message || "Unable to create the order.") : "✅ Order created successfully.";
+
+    if (session.currentStep === "ORDER_MENU_ITEM") {
+      const menuItemName = normalizedMsg;
+      if (!menuItemName) return "What menu item would you like to add?";
+      
+      const menuResult: any = await executeTool("GET_MENU_ITEMS", {}, token);
+      if (menuResult.error) return menuResult.message || "Unable to look up menu items.";
+      
+      const menuItems = Array.isArray(menuResult.data) ? menuResult.data : [];
+      const menuItem = menuItems.find((m: any) => m.name && m.name.trim().toLowerCase() === menuItemName.toLowerCase());
+      if (!menuItem) {
+        return `Menu item "${menuItemName}" was not found.`;
+      }
+      
+      session.collectedFields.pendingMenuItemId = menuItem.id || menuItem._id;
+      session.collectedFields.pendingMenuItemName = menuItem.name;
+      session.currentStep = "ORDER_QUANTITY";
+      return `How many ${menuItem.name} would you like?`;
+    }
+
+    if (session.currentStep === "ORDER_QUANTITY") {
+      const quantity = Number(normalizedMsg);
+      if (isNaN(quantity) || quantity <= 0) {
+        return `How many ${session.collectedFields.pendingMenuItemName} would you like?`;
+      }
+      
+      session.collectedFields.items.push({
+        menuItemId: session.collectedFields.pendingMenuItemId,
+        quantity
+      });
+      
+      delete session.collectedFields.pendingMenuItemId;
+      delete session.collectedFields.pendingMenuItemName;
+      session.currentStep = "ORDER_ADD_ANOTHER";
+      return "Would you like to add another item? (Yes/No)";
+    }
+
+    if (session.currentStep === "ORDER_ADD_ANOTHER") {
+      const answer = normalizedMsg.toLowerCase();
+      if (answer === "yes" || answer === "y") {
+        session.currentStep = "ORDER_MENU_ITEM";
+        return "What menu item would you like to add?";
+      } else if (answer === "no" || answer === "n") {
+        // Validation check before calling CREATE_ORDER
+        const tableId = session.collectedFields.tableId;
+        const items = session.collectedFields.items || [];
+        
+        if (!tableId) {
+          session.currentStep = "ORDER_TABLE";
+          return "Validation failed: Missing table. Which table would you like to create the order for?";
+        }
+        if (items.length === 0) {
+          session.currentStep = "ORDER_MENU_ITEM";
+          return "Validation failed: No items selected. What menu item would you like to add?";
+        }
+        for (const item of items) {
+          if (!item.menuItemId) {
+            session.currentStep = "ORDER_MENU_ITEM";
+            return "Validation failed: Missing menu item ID. What menu item would you like to add?";
+          }
+          if (typeof item.quantity !== "number" || isNaN(item.quantity) || item.quantity <= 0) {
+            session.currentStep = "ORDER_QUANTITY";
+            return "Validation failed: Quantity must be a positive number.";
+          }
+        }
+        
+        const result: any = await executeTool("CREATE_ORDER", { tableId, items }, token);
+        resetOrderConversation(session);
+        if (result.error) {
+          return result.message || "Failed to create order";
+        }
+        
+        // Refresh frontend
+        await executeTool("GET_ORDER", {}, token);
+        return "✅ Order created successfully.";
+      } else {
+        return "Would you like to add another item? (Yes/No)";
+      }
+    }
+  }
+
+  if (session.pendingTool === "UPDATE_ORDER") {
+    if (session.currentStep === "ORDER_UPDATE_SELECT") {
+      const orderNo = normalizedMsg;
+      const orderList: any = await executeTool("GET_ORDER", {}, token);
+      if (orderList.error) {
+        resetOrderConversation(session);
+        return "Unable to load orders.";
+      }
+      const order = (orderList.data || []).find((o: any) => normalizeOrderValue(o.orderNumber) === normalizeOrderValue(orderNo));
+      if (!order) {
+        return `Order "${orderNo}" was not found. Which order number would you like to update?`;
+      }
+      session.collectedFields.id = order.id || order._id;
+      session.collectedFields.orderNumber = order.orderNumber;
+      session.currentStep = "ORDER_UPDATE_STATUS";
+      return "What status should be assigned? (PENDING, ACCEPTED, PREPARING, READY, SERVED, COMPLETED, CANCELLED)";
+    }
+    if (session.currentStep === "ORDER_UPDATE_STATUS") {
+      const status = normalizedMsg.toUpperCase();
+      if (!["PENDING", "ACCEPTED", "PREPARING", "READY", "SERVED", "COMPLETED", "CANCELLED"].includes(status)) {
+        return "What status should be assigned? (PENDING, ACCEPTED, PREPARING, READY, SERVED, COMPLETED, CANCELLED)";
+      }
+      const result = await executeTool("UPDATE_ORDER", { id: session.collectedFields.id, status }, token);
+      resetOrderConversation(session);
+      if (result.error) return formatFriendlyError(result);
+      return "✅ Order status updated successfully.";
+    }
+  }
+
+  if (session.pendingTool === "DELETE_ORDER") {
+    if (session.currentStep === "ORDER_DELETE_SELECT") {
+      const orderNo = normalizedMsg;
+      const orderList: any = await executeTool("GET_ORDER", {}, token);
+      if (orderList.error) {
+        resetOrderConversation(session);
+        return "Unable to load orders.";
+      }
+      const order = (orderList.data || []).find((o: any) => normalizeOrderValue(o.orderNumber) === normalizeOrderValue(orderNo));
+      if (!order) {
+        return `Order "${orderNo}" was not found. Which order number would you like to delete?`;
+      }
+      session.collectedFields.id = order.id || order._id;
+      session.collectedFields.orderNumber = order.orderNumber;
+      session.currentStep = "ORDER_DELETE_CONFIRM";
+      return `Are you sure you want to delete the order '${order.orderNumber}'? (Yes/No)`;
+    }
+    if (session.currentStep === "ORDER_DELETE_CONFIRM") {
+      const answer = normalizedMsg.toLowerCase();
+      if (answer === "yes" || answer === "y") {
+        const result = await executeTool("DELETE_ORDER", { id: session.collectedFields.id }, token);
+        resetOrderConversation(session);
+        if (result.error) return formatFriendlyError(result);
+        return "✅ Order deleted successfully.";
+      } else if (answer === "no" || answer === "n") {
+        resetOrderConversation(session);
+        return "Operation cancelled.";
+      } else {
+        return `Are you sure you want to delete the order '${session.collectedFields.orderNumber}'? (Yes/No)`;
+      }
+    }
   }
 
   resetOrderConversation(session);
