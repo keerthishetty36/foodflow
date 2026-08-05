@@ -43,34 +43,35 @@ export const toolDefinitions: any[] = [
   // Tables
   { type: "function", function: { name: "CREATE_TABLE", description: "Create a table", parameters: { type: "object", properties: { name: { type: "string" }, capacity: { type: "string", description: "Table capacity (e.g. '10')" }, status: { type: "string", enum: ["AVAILABLE", "OCCUPIED", "RESERVED", "CLEANING", "MAINTENANCE"] } }, required: ["name", "capacity", "status"] } } },
   { type: "function", function: { name: "LIST_TABLES", description: "List tables", parameters: { type: "object", properties: {}, required: [] } } },
-  { type: "function", function: { name: "UPDATE_TABLE", description: "Update a table", parameters: { type: "object", properties: { name: { type: "string", description: "Current name" }, capacity: { type: "string", description: "Table capacity (e.g. '10')" }, status: { type: "string", enum: ["AVAILABLE", "OCCUPIED", "RESERVED", "CLEANING", "MAINTENANCE"] } }, required: ["name"] } } },
+  { type: "function", function: { name: "UPDATE_TABLE", description: "Update a table", parameters: { type: "object", properties: { name: { type: "string", description: "Current name" }, newName: { type: "string", description: "New name if renaming" }, capacity: { type: "string", description: "Table capacity (e.g. '10')" }, status: { type: "string", enum: ["AVAILABLE", "OCCUPIED", "RESERVED", "CLEANING", "MAINTENANCE"] } }, required: ["name"] } } },
   { type: "function", function: { name: "RENAME_TABLE", description: "Rename a table", parameters: { type: "object", properties: { name: { type: "string", description: "Current name" }, newName: { type: "string" } }, required: ["name", "newName"] } } },
   { type: "function", function: { name: "CHANGE_TABLE_STATUS", description: "Change table status", parameters: { type: "object", properties: { name: { type: "string", description: "Table name" }, status: { type: "string", enum: ["AVAILABLE", "OCCUPIED", "RESERVED", "CLEANING", "MAINTENANCE"] } }, required: ["name", "status"] } } },
   { type: "function", function: { name: "DELETE_TABLE", description: "Delete a table", parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } } },
 
   // Categories
-  { type: "function", function: { name: "CREATE_CATEGORY", description: "Create a category", parameters: { type: "object", properties: { name: { type: "string" }, description: { type: "string", description: "Category description (optional)" }, active: { type: "boolean", description: "Whether the category is active (Yes/No)" } }, required: ["name", "description", "active"] } } },
-  { type: "function", function: { name: "GET_CATEGORY", description: "List categories", parameters: { type: "object", properties: {}, required: [] } } },
-  { type: "function", function: { name: "UPDATE_CATEGORY", description: "Update a category", parameters: { type: "object", properties: { name: { type: "string", description: "Current name" }, newName: { type: "string" }, description: { type: "string" }, active: { type: "boolean" } }, required: ["name"] } } },
-  { type: "function", function: { name: "DELETE_CATEGORY", description: "Delete a category", parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } } },
+  { type: "function", function: { name: "CREATE_CATEGORY", description: "Create a category", parameters: { type: "object", properties: { name: { type: "string" }, description: { type: "string" }, active: { type: "boolean" } }, required: ["name"], additionalProperties: false } } },
+  { type: "function", function: { name: "GET_CATEGORIES", description: "List categories", parameters: { type: "object", properties: {}, required: [] } } },
+  { type: "function", function: { name: "UPDATE_CATEGORY", description: "Update a category", parameters: { type: "object", properties: { name: { type: "string", description: "Current name" }, newName: { type: "string" }, description: { type: "string" }, active: { type: "boolean" } }, required: ["name"], additionalProperties: false } } },
+  { type: "function", function: { name: "DELETE_CATEGORY", description: "Delete a category", parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"], additionalProperties: false } } },
 
   // Menu Items
-  { type: "function", function: { name: "CREATE_MENU_ITEM", description: "Create a menu item", parameters: { type: "object", properties: { name: { type: "string" }, price: { type: "string", description: "Selling price as a number string (e.g. '60')" }, costPrice: { type: "string", description: "Cost price as a number string (e.g. '35')" }, categoryName: { type: "string" }, vegType: { type: "string", description: "Vegetarian type (VEG, NON_VEG, EGG)" } }, required: ["name", "categoryName", "price", "costPrice"] } } },
+  { type: "function", function: { name: "CREATE_MENU_ITEM", description: "Create a menu item", parameters: { type: "object", properties: { name: { type: "string" }, categoryId: { type: "string" }, costPrice: { type: "number" }, price: { type: "number" }, vegType: { type: "string", enum: ["VEG", "NON_VEG", "EGG"] } }, required: ["name", "categoryId", "costPrice", "price", "vegType"], additionalProperties: false } } },
   { type: "function", function: { name: "GET_MENU_ITEMS", description: "List menu items", parameters: { type: "object", properties: {}, required: [] } } },
-  { type: "function", function: { name: "UPDATE_MENU_ITEM", description: "Update a menu item", parameters: { type: "object", properties: { name: { type: "string" }, newName: { type: "string" }, price: { type: "string" }, costPrice: { type: "string" }, categoryName: { type: "string" } }, required: ["name"] } } },
+  { type: "function", function: { name: "UPDATE_MENU_ITEM", description: "Update a menu item", parameters: { type: "object", properties: { name: { type: "string" }, newName: { type: "string" }, price: { type: "number" }, costPrice: { type: "number" }, categoryId: { type: "string" }, vegType: { type: "string", enum: ["VEG", "NON_VEG", "EGG"] } }, required: ["name"], additionalProperties: false } } },
   { type: "function", function: { name: "DELETE_MENU_ITEM", description: "Delete a menu item", parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } } },
 
   // Users
   { type: "function", function: { name: "CREATE_USER", description: "Create a user", parameters: { type: "object", properties: { name: { type: "string" }, email: { type: "string" }, password: { type: "string" }, role: { type: "string", description: "The role name (e.g., Kitchen Staff, Admin)" } }, required: ["name", "email", "password", "role"] } } },
   { type: "function", function: { name: "GET_USER", description: "List users", parameters: { type: "object", properties: {}, required: [] } } },
+  { type: "function", function: { name: "GET_USERS", description: "List users", parameters: { type: "object", properties: {}, required: [] } } },
   { type: "function", function: { name: "UPDATE_USER", description: "Update a user", parameters: { type: "object", properties: { email: { type: "string", description: "Current user email" }, newName: { type: "string" }, active: { type: "boolean" }, role: { type: "string", description: "New role name" } }, required: ["email"] } } },
   { type: "function", function: { name: "DELETE_USER", description: "Delete a user", parameters: { type: "object", properties: { email: { type: "string" } }, required: ["email"] } } },
 
   // Roles
   { type: "function", function: { name: "CREATE_ROLE", description: "Create a role", parameters: { type: "object", properties: { name: { type: "string" }, description: { type: "string" }, permissions: { type: "array", items: { type: "string" }, description: "List of permission strings (e.g., users.view, pos.bill)" } }, required: ["name", "permissions"] } } },
-  { type: "function", function: { name: "GET_ROLE", description: "List roles", parameters: { type: "object", properties: {}, required: [] } } },
+  { type: "function", function: { name: "GET_ROLES", description: "List roles", parameters: { type: "object", properties: {}, required: [] } } },
   { type: "function", function: { name: "UPDATE_ROLE", description: "Update a role or assign permissions", parameters: { type: "object", properties: { name: { type: "string", description: "Current role name" }, newName: { type: "string" }, permissions: { type: "array", items: { type: "string" } } }, required: ["name"] } } },
-  { type: "function", function: { name: "DELETE_ROLE", description: "Delete a role", parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } } },
+  { type: "function", function: { name: "DELETE_ROLE", description: "Delete a role", parameters: { type: "object", properties: { roleId: { type: "string" } }, required: ["roleId"] } } },
 
   // Suppliers
   { type: "function", function: { name: "CREATE_SUPPLIER", description: "Create supplier", parameters: { type: "object", properties: { name: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, address: { type: "string" } }, required: ["name"] } } },
@@ -92,369 +93,170 @@ export const toolDefinitions: any[] = [
   { type: "function", function: { name: "DELETE_ORDER", description: "Delete order", parameters: { type: "object", properties: { orderNumber: { type: "string" } }, required: ["orderNumber"] } } }
 ];
 
+function normalizeStr(str: string) {
+  if (!str) return "";
+  return String(str).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function levenshteinDistance(a: string, b: string) {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  const matrix = [];
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) == a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
 async function resolveId(endpoint: string, searchKey: string, searchValue: string, token: string): Promise<any> {
   const res: any = await internalFetch(endpoint, "GET", token);
   if (res.error) return res;
   const items = res.data || [];
-  const match = items.find((i: any) => i[searchKey]?.toLowerCase() === searchValue.toLowerCase());
-  if (!match) return { error: true, message: `${searchKey} '${searchValue}' not found.` };
-  return { success: true, id: match.id };
+  
+  const normSearch = normalizeStr(searchValue);
+  
+  // 1. Exact Normalized Match
+  const exactMatch = items.find((i: any) => normalizeStr(i[searchKey]) === normSearch);
+  if (exactMatch) return { success: true, id: exactMatch.id };
+  
+  // 2. Fuzzy Match
+  const matches = items.map((i: any) => {
+     const normItem = normalizeStr(i[searchKey]);
+     const distance = levenshteinDistance(normItem, normSearch);
+     return { item: i, distance, name: i[searchKey] };
+  }).filter((m: any) => m.distance <= 3).sort((a: any, b: any) => a.distance - b.distance);
+  
+  if (matches.length === 1) {
+     return { error: true, message: `Did you mean '${matches[0].name}'?` };
+  } else if (matches.length > 1) {
+     const names = matches.map((m: any) => `'${m.name}'`).join(", ");
+     return { error: true, message: `I couldn't find '${searchValue}'. Did you mean one of these: ${names}?` };
+  }
+  
+  return { error: true, message: `I couldn't find '${searchValue}'. Please enter a valid menu item.` };
 }
 
 export async function executeTool(name: string, args: any, token: string) {
   switch (name) {
-    case "GET_DASHBOARD": return internalFetch("/dashboard", "GET", token);
-    case "GET_SALES_REPORT": return internalFetch(`/reports/sales${args.from ? `?from=${args.from}` : ""}`, "GET", token);
+    case "GET_DASHBOARD":
+      return internalFetch("/dashboard", "GET", token);
+    case "GET_SALES_REPORT":
+      return internalFetch(`/reports/sales${args.from ? `?from=${args.from}` : ""}`, "GET", token);
 
-    case "GET_TABLE": return internalFetch("/tables", "GET", token);
-    case "UPDATE_TABLE": {
-      const idRes: any = await resolveId("/tables", "name", args.name, token);
-      if (idRes.error) return idRes;
-      const { name, newName, ...rest } = args;
-      return internalFetch(`/tables/${idRes.id}`, "PATCH", token, { ...rest, name: newName || name });
-    }
-    case "DELETE_TABLE": {
-      const idRes: any = await resolveId("/tables", "name", args.name, token);
-      if (idRes.error) return idRes;
-      return internalFetch(`/tables/${idRes.id}`, "DELETE", token);
-    }
-    
-    case "GET_CATEGORY": return internalFetch("/categories", "GET", token);
-    case "CREATE_CATEGORY": return internalFetch("/categories", "POST", token, args);
+    // Categories
+    case "CREATE_CATEGORY":
+      return internalFetch("/categories", "POST", token, args);
+    case "GET_CATEGORIES":
+      return internalFetch("/categories", "GET", token);
     case "UPDATE_CATEGORY": {
-      const idRes: any = await resolveId("/categories", "name", args.name, token);
-      if (idRes.error) return idRes;
-      const { name, newName, ...rest } = args;
-      return internalFetch(`/categories/${idRes.id}`, "PATCH", token, { ...rest, name: newName || name });
+      const { id, ...payload } = args;
+      return internalFetch(`/categories/${id}`, "PATCH", token, payload);
     }
-    case "DELETE_CATEGORY": {
-      const idRes: any = await resolveId("/categories", "name", args.name, token);
-      if (idRes.error) return idRes;
-      return internalFetch(`/categories/${idRes.id}`, "DELETE", token);
-    }
+    case "DELETE_CATEGORY":
+      return internalFetch(`/categories/${args.id}`, "DELETE", token);
 
-    case "GET_MENU_ITEMS": return internalFetch("/menu-items", "GET", token);
-
+    // Menu Items
+    case "CREATE_MENU_ITEM":
+      return internalFetch("/menu-items", "POST", token, args);
+    case "GET_MENU_ITEMS":
+      return internalFetch("/menu-items", "GET", token);
     case "UPDATE_MENU_ITEM": {
-      const idRes: any = await resolveId("/menu-items", "name", args.name, token);
-      if (idRes.error) return idRes;
-      
-      const payload: any = {};
-      if (args.newName) payload.name = args.newName;
-      
-      if (args.price !== undefined) {
-        payload.price = Number(args.price);
-        if (isNaN(payload.price)) return { error: true, status: 400, message: "What is the selling price?" };
-      }
-      
-      if (args.costPrice !== undefined) {
-        payload.costPrice = Number(args.costPrice);
-        if (isNaN(payload.costPrice)) return { error: true, status: 400, message: "What is the cost price?" };
-      }
-      
-      if (args.categoryName) {
-        const catRes: any = await resolveId("/categories", "name", args.categoryName, token);
-        if (catRes.error) return catRes;
-        payload.categoryId = catRes.id;
-      }
-      
-      return internalFetch(`/menu-items/${idRes.id}`, "PATCH", token, payload);
+      const { id, ...payload } = args;
+      return internalFetch(`/menu-items/${id}`, "PATCH", token, payload);
     }
-    case "DELETE_MENU_ITEM": {
-      const idRes: any = await resolveId("/menu-items", "name", args.name, token);
-      if (idRes.error) return idRes;
-      return internalFetch(`/menu-items/${idRes.id}`, "DELETE", token);
-    }
+    case "DELETE_MENU_ITEM":
+      return internalFetch(`/menu-items/${args.id}`, "DELETE", token);
 
-    case "GET_USER": return internalFetch("/users", "GET", token);
-    case "CREATE_USER": {
-      const newArgs = { ...args };
-      try {
-        if (newArgs.role) {
-          const roleRes: any = await internalFetch("/roles", "GET", token);
-          if (roleRes.error) return roleRes;
-          
-          const matches = (roleRes.data || []).filter((r: any) => {
-            if (!r.name) return false;
-            return r.name.toLowerCase().includes(String(newArgs.role).toLowerCase()) || 
-                   r.displayName?.toLowerCase().includes(String(newArgs.role).toLowerCase());
-          });
-          
-          if (matches.length === 0) {
-            return { error: true, status: 404, message: `The role '${newArgs.role}' doesn't exist. Would you like me to create it first?` };
-          }
-          if (matches.length > 1) {
-            const exactMatch = matches.find((r: any) => 
-              r.name.toLowerCase() === String(newArgs.role).toLowerCase() || 
-              r.displayName?.toLowerCase() === String(newArgs.role).toLowerCase()
-            );
-            if (exactMatch) {
-              newArgs.roleId = exactMatch.id;
-            } else {
-              return { error: true, status: 400, message: `Multiple roles match "${newArgs.role}": ${matches.map((r:any) => r.name).join(", ")}. Please specify which one you mean.` };
-            }
-          } else {
-            newArgs.roleId = matches[0].id;
-          }
-          delete newArgs.role; // don't send both baseRole and roleId
-        }
-
-        return await internalFetch("/users", "POST", token, newArgs);
-      } catch (e: any) {
-        logger.error("Error creating user", { toolName: "CREATE_USER", payload: args, error: e.message, stack: e.stack });
-        return { error: true, status: 500, message: e.message || String(e) };
-      }
-    }
-    case "UPDATE_USER": {
-      const idRes: any = await resolveId("/users", "email", args.email, token);
-      if (idRes.error) return idRes;
-      const newArgs = { ...args };
-      if (newArgs.role) {
-        const roleRes: any = await internalFetch("/roles", "GET", token);
-        if (roleRes.error) return roleRes;
-        
-        const matches = (roleRes.data || []).filter((r: any) => 
-           r.name.toLowerCase().includes(newArgs.role.toLowerCase()) || 
-           r.displayName?.toLowerCase().includes(newArgs.role.toLowerCase())
-        );
-        
-        if (matches.length === 0) {
-          return { error: true, status: 404, message: `The role '${newArgs.role}' doesn't exist. Would you like me to create it first?` };
-        }
-        if (matches.length > 1) {
-          const exactMatch = matches.find((r: any) => r.name.toLowerCase() === newArgs.role.toLowerCase() || r.displayName?.toLowerCase() === newArgs.role.toLowerCase());
-          if (exactMatch) {
-             newArgs.roleId = exactMatch.id;
-          } else {
-             return { error: true, status: 400, message: `Multiple roles match "${newArgs.role}": ${matches.map((r:any) => r.name).join(", ")}. Please specify which one you mean.` };
-          }
-        } else {
-          newArgs.roleId = matches[0].id;
-        }
-        delete newArgs.role;
-      }
-      const { email, newName, ...rest } = newArgs;
-      return internalFetch(`/users/${idRes.id}`, "PATCH", token, { ...rest, name: newName });
-    }
-    case "DELETE_USER": {
-      const idRes: any = await resolveId("/users", "email", args.email, token);
-      if (idRes.error) return idRes;
-      return internalFetch(`/users/${idRes.id}`, "DELETE", token);
-    }
-    
-    // -- TABLES --
+    // Tables
+    case "CREATE_TABLE":
+      return internalFetch("/tables", "POST", token, args);
+    case "GET_TABLE":
     case "LIST_TABLES":
-    case "GET_TABLE": 
       return internalFetch("/tables", "GET", token);
-      
-    case "CREATE_TABLE": {
-      let { name, capacity, status } = args;
-      if (!name || !capacity || !status) {
-        return { error: true, status: 400, message: "Missing required fields: name, capacity, status" };
-      }
-      capacity = Number(capacity);
-      if (isNaN(capacity)) {
-        return { error: true, status: 400, message: "Please enter a valid numeric capacity." };
-      }
+    case "UPDATE_TABLE": {
+      const { id, ...payload } = args;
+      return internalFetch(`/tables/${id}`, "PATCH", token, payload);
+    }
+    case "DELETE_TABLE":
+      return internalFetch(`/tables/${args.id}`, "DELETE", token);
 
-      status = String(status).toUpperCase();
-      if (status === "MAINTENANCE") status = "CLEANING"; // Map to backend enum
-      
-      const payload = { name, capacity, status };
-      return internalFetch("/tables", "POST", token, payload);
+    // Orders
+    case "CREATE_ORDER":
+      return internalFetch("/orders", "POST", token, args);
+    case "GET_ORDER":
+      return internalFetch(`/orders${args.status ? `?status=${args.status}` : ""}`, "GET", token);
+    case "UPDATE_ORDER": {
+      const { id, ...payload } = args;
+      return internalFetch(`/orders/${id}/status`, "PATCH", token, payload);
     }
-    
-    case "UPDATE_TABLE":
-    case "RENAME_TABLE":
-    case "CHANGE_TABLE_STATUS": {
-      const idRes: any = await resolveId("/tables", "name", args.name, token);
-      if (idRes.error) return idRes;
-      
-      const payload: any = {};
-      if (args.newName) payload.name = args.newName;
-      if (args.capacity !== undefined) {
-        payload.capacity = Number(args.capacity);
-        if (isNaN(payload.capacity)) {
-          return { error: true, status: 400, message: "What should the seating capacity be?" };
-        }
-      }
-      if (args.status) {
-        let st = String(args.status).toUpperCase();
-        if (st === "MAINTENANCE") st = "CLEANING";
-        payload.status = st;
-      }
-      
-      return internalFetch(`/tables/${idRes.id}`, "PATCH", token, payload);
-    }
-    
-    case "DELETE_TABLE": {
-      const idRes: any = await resolveId("/tables", "name", args.name, token);
-      if (idRes.error) return idRes;
-      return internalFetch(`/tables/${idRes.id}`, "DELETE", token);
-    }
+    case "DELETE_ORDER":
+      return internalFetch(`/orders/${args.id}`, "DELETE", token);
 
-    // -- ROLES --
-    case "GET_ROLE": return internalFetch("/roles", "GET", token);
-    case "CREATE_ROLE": return internalFetch("/roles", "POST", token, args);
+    // Roles
+    case "CREATE_ROLE":
+      return internalFetch("/roles", "POST", token, args);
+    case "GET_ROLES":
+      return internalFetch("/roles", "GET", token);
     case "UPDATE_ROLE": {
-      const idRes: any = await resolveId("/roles", "name", args.name, token);
-      if (idRes.error) return idRes;
-      const { name, newName, ...rest } = args;
-      return internalFetch(`/roles/${idRes.id}`, "PATCH", token, { ...rest, name: newName || name });
+      const { id, ...payload } = args;
+      return internalFetch(`/roles/${id}`, "PATCH", token, payload);
     }
     case "DELETE_ROLE": {
-      const idRes: any = await resolveId("/roles", "name", args.name, token);
-      if (idRes.error) return idRes;
-      return internalFetch(`/roles/${idRes.id}`, "DELETE", token);
-    }
-    
-    case "CREATE_MENU_ITEM": {
-      // Programmatically build the payload from collected fields
-      let name = args.name || args.foodName;
-      name = typeof name === "string" ? name.trim() : name;
-      
-      const categoryName = args.categoryName || args.category;
-      let p = Number(args.price || args.sellingPrice);
-      let cp = Number(args.costPrice);
-      
-      if (isNaN(p)) return { error: true, status: 400, message: "What is the selling price?" };
-      if (isNaN(cp)) return { error: true, status: 400, message: "What is the cost price?" };
-
-      const catRes: any = await resolveId("/categories", "name", categoryName, token);
-      if (catRes.error) return { error: true, status: 400, message: `I couldn't find the category '${categoryName}'. Please choose an existing category.` };
-
-      // Validate against the exact registered tool schema
-      const schemaDef = toolDefinitions.find(t => t.function.name === "CREATE_MENU_ITEM")?.function.parameters.properties || {};
-      
-      const rawPayload: any = {
-        name,
-        categoryId: catRes.id,
-        price: p,
-        costPrice: cp
-      };
-      
-      // Auto-repair if the schema strictly requires it
-      if (schemaDef.vegType) rawPayload.vegType = "VEG";
-
-      const payload: any = {};
-      const allowedKeys = Object.keys(schemaDef).map(k => k === "categoryName" ? "categoryId" : k); // translate categoryName -> categoryId
-      
-      for (const key of allowedKeys) {
-         if (rawPayload[key] !== undefined) {
-             payload[key] = rawPayload[key];
-         }
-      }
-
-      if (process.env.NODE_ENV === "development") {
-        logger.debug("Final CREATE_MENU_ITEM payload", {
-          resolvedCategory: catRes,
-          collectedFields: args,
-          fullPayload: payload,
-          toolSchema: schemaDef
-        });
-      }
-      
-      const response = await internalFetch("/menu-items", "POST", token, payload);
-      
-      if (process.env.NODE_ENV === "development") {
-        logger.debug("Backend response", { response });
-      }
-      return response;
+      const id = args.roleId || args.id;
+      return internalFetch(`/roles/${id}`, "DELETE", token);
     }
 
-    case "GET_SUPPLIER": return internalFetch("/suppliers", "GET", token);
-    case "CREATE_SUPPLIER": return internalFetch("/suppliers", "POST", token, args);
-    case "UPDATE_SUPPLIER": {
-      const idRes: any = await resolveId("/suppliers", "name", args.name, token);
-      if (idRes.error) return idRes;
-      const { name, newName, ...rest } = args;
-      return internalFetch(`/suppliers/${idRes.id}`, "PATCH", token, { ...rest, name: newName || name });
+    // Users
+    case "CREATE_USER":
+      return internalFetch("/users", "POST", token, args);
+    case "GET_USER":
+    case "GET_USERS":
+      return internalFetch("/users", "GET", token);
+    case "UPDATE_USER": {
+      const { id, ...payload } = args;
+      return internalFetch(`/users/${id}`, "PATCH", token, payload);
     }
-    case "DELETE_SUPPLIER": {
-      const idRes: any = await resolveId("/suppliers", "name", args.name, token);
-      if (idRes.error) return idRes;
-      return internalFetch(`/suppliers/${idRes.id}`, "DELETE", token);
-    }
+    case "DELETE_USER":
+      return internalFetch(`/users/${args.id}`, "DELETE", token);
 
-    case "GET_INVENTORY": return internalFetch("/inventory", "GET", token);
-    case "CREATE_INVENTORY": return internalFetch("/inventory", "POST", token, args);
+    // Inventory
+    case "CREATE_INVENTORY":
+      return internalFetch("/inventory", "POST", token, args);
+    case "GET_INVENTORY":
+      return internalFetch("/inventory", "GET", token);
     case "UPDATE_INVENTORY": {
-      const idRes: any = await resolveId("/inventory", "name", args.name, token);
-      if (idRes.error) return idRes;
-      const { name, ...rest } = args;
-      return internalFetch(`/inventory/${idRes.id}`, "PATCH", token, rest);
+      const { id, ...payload } = args;
+      return internalFetch(`/inventory/${id}`, "PATCH", token, payload);
     }
-    case "DELETE_INVENTORY": {
-      const idRes: any = await resolveId("/inventory", "name", args.name, token);
-      if (idRes.error) return idRes;
-      return internalFetch(`/inventory/${idRes.id}`, "DELETE", token);
-    }
+    case "DELETE_INVENTORY":
+      return internalFetch(`/inventory/${args.id}`, "DELETE", token);
 
-    case "GET_ORDER": return internalFetch(`/orders${args.status ? `?status=${args.status}` : ""}`, "GET", token);
-    case "CREATE_ORDER": {
-      const newArgs = { ...args };
-      if (args.tableName) {
-        const tableRes: any = await resolveId("/tables", "name", args.tableName, token);
-        if (tableRes.error) return tableRes;
-        newArgs.tableId = tableRes.id;
-        delete newArgs.tableName;
-      }
-      if (args.items && args.items.length > 0) {
-        const resolvedItems = [];
-        for (const item of args.items) {
-          const itemRes: any = await resolveId("/menu-items", "name", item.menuItemName, token);
-          if (itemRes.error) return itemRes;
-          resolvedItems.push({ menuItemId: itemRes.id, quantity: item.quantity, notes: item.notes });
-        }
-        newArgs.items = resolvedItems;
-      }
-      return internalFetch("/orders", "POST", token, newArgs);
+    // Suppliers
+    case "CREATE_SUPPLIER":
+      return internalFetch("/suppliers", "POST", token, args);
+    case "GET_SUPPLIER":
+      return internalFetch("/suppliers", "GET", token);
+    case "UPDATE_SUPPLIER": {
+      const { id, ...payload } = args;
+      return internalFetch(`/suppliers/${id}`, "PATCH", token, payload);
     }
-    case "UPDATE_ORDER": {
-      const idRes: any = await resolveId("/orders", "orderNumber", args.orderNumber, token);
-      if (idRes.error) return idRes;
-      return internalFetch(`/orders/${idRes.id}/status`, "PATCH", token, { status: args.status });
-    }
-    case "CANCEL_ORDER": {
-      const idRes: any = await resolveId("/orders", "orderNumber", args.orderNumber, token);
-      if (idRes.error) return idRes;
-      return internalFetch(`/orders/${idRes.id}/status`, "PATCH", token, { status: "CANCELLED" });
-    }
-    case "DELETE_ORDER": {
-      const idRes: any = await resolveId("/orders", "orderNumber", args.orderNumber, token);
-      if (idRes.error) return idRes;
-      return internalFetch(`/orders/${idRes.id}`, "DELETE", token);
-    }
-    
-    default: {
-      logger.info(`Tool ${name} not explicitly mapped. Attempting automatic REST mapping.`);
-      const matches = name.match(/^(CREATE|UPDATE|DELETE|GET)_([A-Z_]+)$/);
-      if (matches) {
-        const action = matches[1];
-        let entity = matches[2].toLowerCase().replace(/_/g, "-") + "s";
-        if (entity === "categorys") entity = "categories";
-        if (entity === "inventorys") entity = "inventory";
-        if (entity === "menus" || entity === "menu-items") entity = "menu-items";
-        
-        let method = "GET";
-        if (action === "CREATE") method = "POST";
-        else if (action === "UPDATE") method = "PATCH";
-        else if (action === "DELETE") method = "DELETE";
+    case "DELETE_SUPPLIER":
+      return internalFetch(`/suppliers/${args.id}`, "DELETE", token);
 
-        if (action === "CREATE" || action === "GET") {
-          return internalFetch(`/${entity}`, method, token, args);
-        } else {
-          const searchKey = args.name ? "name" : (args.email ? "email" : "id");
-          const searchValue = args.name || args.email || args.id;
-          if (searchValue) {
-             const idRes: any = await resolveId(`/${entity}`, searchKey, searchValue, token);
-             if (idRes.error) return idRes;
-             return internalFetch(`/${entity}/${idRes.id}`, method, token, action === "UPDATE" ? args : undefined);
-          }
-          return { error: true, message: `Cannot resolve ID for ${name}. Missing identifier.` };
-        }
-      }
+    default:
       return { error: true, message: `Tool ${name} is not registered or automatically mapped.` };
-    }
   }
 }
