@@ -1,5 +1,6 @@
 import { env } from "../config.js";
-import { logger } from "../lib.js";
+import { logger, prisma } from "../lib.js";
+import jwt from "jsonwebtoken";
 
 // Utility to make internal authenticated requests
 export async function internalFetch(path: string, method: string, token: string, body?: any) {
@@ -149,7 +150,84 @@ async function resolveId(endpoint: string, searchKey: string, searchValue: strin
   return { error: true, message: `I couldn't find '${searchValue}'. Please enter a valid menu item.` };
 }
 
+const permissionMapping: Record<string, string> = {
+  CREATE_TABLE: "tables.create",
+  UPDATE_TABLE: "tables.update",
+  DELETE_TABLE: "tables.delete",
+  READ_TABLE: "tables.view",
+  LIST_TABLES: "tables.view",
+  RENAME_TABLE: "tables.update",
+  CHANGE_TABLE_STATUS: "tables.update",
+  GET_TABLE: "tables.view",
+
+  CREATE_CATEGORY: "categories.create",
+  UPDATE_CATEGORY: "categories.update",
+  DELETE_CATEGORY: "categories.delete",
+  READ_CATEGORY: "categories.read",
+  GET_CATEGORIES: "categories.read",
+
+  CREATE_MENU_ITEM: "menu.create",
+  UPDATE_MENU_ITEM: "menu.update",
+  DELETE_MENU_ITEM: "menu.delete",
+  READ_MENU_ITEM: "menu.read",
+  GET_MENU_ITEMS: "menu.read",
+
+  CREATE_ORDER: "orders.create",
+  UPDATE_ORDER: "orders.update",
+  DELETE_ORDER: "orders.delete",
+  READ_ORDER: "orders.view",
+  GET_ORDER: "orders.view",
+  CANCEL_ORDER: "orders.delete",
+
+  CREATE_INVENTORY: "inventory.create",
+  UPDATE_INVENTORY: "inventory.update",
+  DELETE_INVENTORY: "inventory.delete",
+  GET_INVENTORY: "inventory.view",
+
+  CREATE_USER: "users.create",
+  UPDATE_USER: "users.update",
+  DELETE_USER: "users.delete",
+  GET_USER: "users.view",
+  GET_USERS: "users.view",
+
+  CREATE_ROLE: "roles.create",
+  UPDATE_ROLE: "roles.update",
+  DELETE_ROLE: "roles.delete",
+  GET_ROLES: "roles.view",
+
+  GET_SALES_REPORT: "reports.view",
+
+  GET_DASHBOARD: "dashboard.view",
+  
+  CREATE_SUPPLIER: "suppliers.create",
+  UPDATE_SUPPLIER: "suppliers.update",
+  DELETE_SUPPLIER: "suppliers.delete",
+  GET_SUPPLIER: "suppliers.view",
+};
+
+export async function checkChatbotPermission(token: string, toolName: string) {
+  const required = permissionMapping[toolName];
+  if (!required) return true;
+  
+  try {
+    const payload = jwt.verify(token, env.JWT_ACCESS_SECRET) as any;
+    const user = await prisma.user.findUnique({ where: { id: payload.sub }, include: { customRole: true } });
+    if (!user) return false;
+    const permissions = user.customRole?.permissions || (user.role === "ADMIN" ? ["*"] : []);
+    if (permissions.includes("*")) return true;
+    return permissions.includes(required);
+  } catch (error) {
+    logger.warn("Chatbot permission check failed", { error: String(error) });
+    return false;
+  }
+}
+
 export async function executeTool(name: string, args: any, token: string) {
+  const hasPermission = await checkChatbotPermission(token, name);
+  if (!hasPermission) {
+    return { error: true, status: 403, message: "❌ You don't have permission to perform this action." };
+  }
+
   switch (name) {
     case "GET_DASHBOARD":
       return internalFetch("/dashboard", "GET", token);

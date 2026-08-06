@@ -1887,6 +1887,7 @@ ${JSON.stringify(session.cachedLookups)}
         for (const toolCall of toolCalls) {
           const name = toolCall.function.name;
           let args = JSON.parse(toolCall.function.arguments || "{}");
+          const prepareMenuToolArgs = async (name: string, a: any, t: string): Promise<{args: any, error?: string}> => ({ args: a });
           const isCatalogMutation = ["CREATE_CATEGORY", "UPDATE_CATEGORY", "DELETE_CATEGORY", "CREATE_MENU_ITEM", "UPDATE_MENU_ITEM", "DELETE_MENU_ITEM"].includes(name);
           const isCatalogTool = isCatalogMutation || ["GET_CATEGORIES", "GET_MENU_ITEMS"].includes(name);
           let result: any;
