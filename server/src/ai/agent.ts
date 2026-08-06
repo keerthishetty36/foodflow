@@ -549,6 +549,26 @@ async function handleMenuConversation(message: string, session: any, token: stri
   return null;
 }
 
+function matchStatus(input: string): string | null {
+  const normalized = input.trim().toLowerCase().replace(/\s+/g, '');
+  if (!normalized) return null;
+  const valid = ["available", "occupied", "reserved", "cleaning", "maintenance"];
+  let bestMatch = "";
+  let minDistance = Infinity;
+  for (const v of valid) {
+    const dist = editDistance(normalized, v);
+    if (dist < minDistance) {
+      minDistance = dist;
+      bestMatch = v;
+    }
+  }
+  if (minDistance <= 3) {
+    if (bestMatch === "maintenance") return "CLEANING";
+    return bestMatch.toUpperCase();
+  }
+  return null;
+}
+
 function resetTableConversation(session: any) {
   session.pendingTool = undefined;
   session.currentStep = "IDLE";
@@ -604,9 +624,8 @@ async function handleTableConversation(message: string, session: any, token: str
       return "What is the status? (AVAILABLE, OCCUPIED, RESERVED, CLEANING)";
     }
     if (session.currentStep === "TABLE_CREATE_STATUS") {
-      let status = normalizedMsg.toUpperCase();
-      if (status === "MAINTENANCE") status = "CLEANING";
-      if (!["AVAILABLE", "OCCUPIED", "RESERVED", "CLEANING"].includes(status)) {
+      let status = matchStatus(normalizedMsg);
+      if (!status) {
         return "What is the status? (AVAILABLE, OCCUPIED, RESERVED, CLEANING)";
       }
       session.collectedFields.status = status;
@@ -675,9 +694,8 @@ async function handleTableConversation(message: string, session: any, token: str
       return "✅ Table updated successfully.";
     }
     if (session.currentStep === "TABLE_UPDATE_STATUS_VALUE") {
-      let status = normalizedMsg.toUpperCase();
-      if (status === "MAINTENANCE") status = "CLEANING";
-      if (!["AVAILABLE", "OCCUPIED", "RESERVED", "CLEANING"].includes(status)) {
+      let status = matchStatus(normalizedMsg);
+      if (!status) {
         return "What status should be set? (AVAILABLE, OCCUPIED, RESERVED, CLEANING)";
       }
       const result = await executeTool("UPDATE_TABLE", { id: session.collectedFields.id, status }, token);
@@ -1611,20 +1629,45 @@ export async function chatStream(req: Request, res: Response) {
     const startsInventoryUpdate = /\b(update|edit|modify)\b.*\binventory\b/i.test(normalizedMsg);
     const startsInventoryDelete = /\b(delete|remove)\b.*\binventory\b/i.test(normalizedMsg);
 
+    const permissions: string[] = (req as any).user?.permissions || [];
+    const hasPerm = (perm: string) => permissions.includes("*") || permissions.includes(perm);
+    const chk = (start: boolean, perm: string, msg: string) => (start && !hasPerm(perm)) ? `❌ You don't have permission to ${msg}.` : null;
+
     if (startsCategoryCreate || startsCategoryUpdate || startsCategoryDelete) {
-      handlerRes = await handleCategoryConversation(message, session, token);
+      handlerRes = chk(startsCategoryCreate, "categories.create", "create categories") ||
+                   chk(startsCategoryUpdate, "categories.update", "update categories") ||
+                   chk(startsCategoryDelete, "categories.delete", "delete categories") ||
+                   await handleCategoryConversation(message, session, token);
     } else if (startsMenuCreate || startsMenuUpdate || startsMenuDelete) {
-      handlerRes = await handleMenuConversation(message, session, token);
+      handlerRes = chk(startsMenuCreate, "menu.create", "create menu") ||
+                   chk(startsMenuUpdate, "menu.update", "update menu") ||
+                   chk(startsMenuDelete, "menu.delete", "delete menu") ||
+                   await handleMenuConversation(message, session, token);
     } else if (startsTableCreate || startsTableUpdate || startsTableDelete) {
-      handlerRes = await handleTableConversation(message, session, token);
+      handlerRes = chk(startsTableCreate, "tables.create", "create tables") ||
+                   chk(startsTableUpdate, "tables.update", "update tables") ||
+                   chk(startsTableDelete, "tables.delete", "delete tables") ||
+                   await handleTableConversation(message, session, token);
     } else if (startsOrderCreate || startsOrderUpdate || startsOrderDelete) {
-      handlerRes = await handleOrderConversation(message, session, token);
+      handlerRes = chk(startsOrderCreate, "orders.create", "create orders") ||
+                   chk(startsOrderUpdate, "orders.update", "update orders") ||
+                   chk(startsOrderDelete, "orders.delete", "delete orders") ||
+                   await handleOrderConversation(message, session, token);
     } else if (startsRoleCreate || startsRoleUpdate || startsRoleDelete) {
-      handlerRes = await handleRoleConversation(message, session, token);
+      handlerRes = chk(startsRoleCreate, "roles.create", "create roles") ||
+                   chk(startsRoleUpdate, "roles.update", "update roles") ||
+                   chk(startsRoleDelete, "roles.delete", "delete roles") ||
+                   await handleRoleConversation(message, session, token);
     } else if (startsUserCreate || startsUserUpdate || startsUserDelete) {
-      handlerRes = await handleUserConversation(message, session, token);
+      handlerRes = chk(startsUserCreate, "users.create", "create users") ||
+                   chk(startsUserUpdate, "users.update", "update users") ||
+                   chk(startsUserDelete, "users.delete", "delete users") ||
+                   await handleUserConversation(message, session, token);
     } else if (startsInventoryCreate || startsInventoryUpdate || startsInventoryDelete) {
-      handlerRes = await handleInventoryConversation(message, session, token);
+      handlerRes = chk(startsInventoryCreate, "inventory.create", "create inventory") ||
+                   chk(startsInventoryUpdate, "inventory.update", "update inventory") ||
+                   chk(startsInventoryDelete, "inventory.delete", "delete inventory") ||
+                   await handleInventoryConversation(message, session, token);
     }
   }
 
